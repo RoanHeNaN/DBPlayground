@@ -64,4 +64,3 @@ int main() {
 ```
 
 That link requirement is itself the proof of everything above: the compiler emits a concrete vtable per specialization, and each vtable slot must point at a real, already-generated function. A virtual function template has no single concrete function to point at, which is exactly why it is forbidden.
-
