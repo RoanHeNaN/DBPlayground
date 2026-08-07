@@ -5,8 +5,6 @@
 #ifndef DBPLAYGROUND_MINIKV_H
 #define DBPLAYGROUND_MINIKV_H
 
-#include <vector>
-
 #include "Common/Config.h"
 #include "Container/BPlusTree.h"
 #include "Storage/BufferPool/BufferPoolManager.h"
@@ -21,7 +19,8 @@ class MiniKV {
   bool Update(key_t key, value_t value);
   bool Remove(key_t key);
   value_t Get(key_t key);
-  values Range(key_t key);
+
+  values Range(key_t left);
 
  private:
   std::shared_ptr<DiskManager> disk_manager_;

@@ -3,6 +3,7 @@
 //
 
 #include "Core/MiniKV.h"
+#include "Common/Config.h"
 
 namespace dbplay {
 
@@ -26,5 +27,10 @@ bool MiniKV::Remove(key_t key) {
   container_.Remove(key);
   return true;
 }
+
+values MiniKV::Range(key_t key) {
+  values res;
+  return res;
+};
 
 }  // namespace dbplay

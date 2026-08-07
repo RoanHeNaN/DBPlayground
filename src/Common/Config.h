@@ -7,7 +7,6 @@
 
 #include <vector>
 
-#include "Macros.h"
 #include "glog/logging.h"
 
 namespace dbplay {

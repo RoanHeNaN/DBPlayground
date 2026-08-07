@@ -17,10 +17,7 @@
 //===----------------------------------------------------------------------===//
 #pragma once
 
-#include <deque>
-#include <queue>
 #include <string>
-#include <vector>
 
 #include "Common/Config.h"
 #include "Concurrency/Transaction.h"
