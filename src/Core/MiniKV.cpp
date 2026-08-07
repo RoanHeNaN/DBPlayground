@@ -4,27 +4,27 @@
 
 #include "Core/MiniKV.h"
 
-namespace miniKV {
+namespace dbplay {
 
 MiniKV::MiniKV()
-    : disk_manager(new DiskManager("miniKV.db")),
-      bpm(new BufferPoolManager(BUFFER_POOL_SIZE, disk_manager)),
-      container(bpm) {}
+    : disk_manager_(new DiskManager("dbplayground.db")),
+      buffer_pool_manager_(new BufferPoolManager(BUFFER_POOL_SIZE, disk_manager_)),
+      container_(buffer_pool_manager_) {}
 
-value_t MiniKV::get(key_t key) {
+value_t MiniKV::Get(key_t key) {
   value_t value;
-  if (container.GetValue(key, value)) return value;
+  if (container_.GetValue(key, value)) return value;
 
   return -1;
 }
 
-bool MiniKV::insert(key_t key, value_t value) { return container.Insert(key, value); }
+bool MiniKV::Insert(key_t key, value_t value) { return container_.Insert(key, value); }
 
-bool MiniKV::update(key_t key, value_t value) { return container.Insert(key, value); }
+bool MiniKV::Update(key_t key, value_t value) { return container_.Insert(key, value); }
 
-bool MiniKV::remove(key_t key) {
-  container.Remove(key);
+bool MiniKV::Remove(key_t key) {
+  container_.Remove(key);
   return true;
 }
 
-}  // namespace miniKV
+}  // namespace dbplay

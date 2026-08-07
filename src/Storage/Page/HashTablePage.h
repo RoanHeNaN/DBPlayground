@@ -2,11 +2,16 @@
 // Created by 何智强 on 2021/10/4.
 //
 
-#ifndef MINIKV_HASHTABLEPAGE_H
-#define MINIKV_HASHTABLEPAGE_H
-#include "src/Common/Config.h"
+#ifndef DBPLAYGROUND_HASHTABLEPAGE_H
+#define DBPLAYGROUND_HASHTABLEPAGE_H
 
-namespace miniKV {
+#include <atomic>
+#include <cassert>
+#include <utility>
+
+#include "Common/Config.h"
+
+namespace dbplay {
 
 #define HASH_TABLE_BLOCK_TYPE HashTableBlockPage<KeyType, ValueType, KeyComparator>
 
@@ -45,31 +50,31 @@ class HashTablePage {
    */
   bool IsReadable(size_t slot_offset) const;
 
-  inline size_t Size() const { return size; }
+  inline size_t Size() const { return size_; }
 
-  inline page_id_t GetPageID() const { return page_id; }
+  inline page_id_t GetPageId() const { return page_id_; }
 
-  inline page_id_t GetNextPageId() const { return next; }
+  inline page_id_t GetNextPageId() const { return next_page_id_; }
 
   inline bool IsFull() const {
-    assert(size <= BLOCK_ARRAY_SIZE);
-    return size == BLOCK_ARRAY_SIZE;
+    assert(size_ <= BLOCK_ARRAY_SIZE);
+    return size_ == BLOCK_ARRAY_SIZE;
   }
 
-  void SetPageID(page_id_t page_id_) { page_id = page_id_; }
+  void SetPageId(page_id_t page_id) { page_id_ = page_id; }
 
-  void SetNextPageID(page_id_t next_) { next = next_; }
+  void SetNextPageId(page_id_t next_page_id) { next_page_id_ = next_page_id; }
 
  private:
-  page_id_t page_id;
-  page_id_t next;
-  size_t size;
+  page_id_t page_id_;
+  page_id_t next_page_id_;
+  size_t size_;
 
-  std::atomic_char occupied[(BLOCK_ARRAY_SIZE - 1) / 8 + 1];
-  std::atomic_char readable[(BLOCK_ARRAY_SIZE - 1) / 8 + 1];
-  MappingType array[0];
+  std::atomic_char occupied_[(BLOCK_ARRAY_SIZE - 1) / 8 + 1];
+  std::atomic_char readable_[(BLOCK_ARRAY_SIZE - 1) / 8 + 1];
+  MappingType array_[0];
 };
 
-}  // namespace miniKV
+}  // namespace dbplay
 
-#endif  // MINIKV_HASHTABLEPAGE_H
+#endif  // DBPLAYGROUND_HASHTABLEPAGE_H

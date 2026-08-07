@@ -14,9 +14,9 @@
 #include "glog/logging.h"
 #include "gtest/gtest.h"
 
-namespace miniKV {
+namespace dbplay {
 
-const constexpr size_t NUM_TRIES = 1;
+constexpr size_t NUM_TRIES = 1;
 const constexpr size_t BUFFER_POOL_SLOT_NUM = 128000;
 
 template <typename... Args>
@@ -51,14 +51,14 @@ void DeleteHelper(std::shared_ptr<BPlusTree<key_t, value_t>> tree, const std::ve
   delete transaction;
 }
 
-TEST(CoreTest, Concurrent_Insert_Test) {
+TEST(CoreTest, ConcurrentInsert) {
   for (size_t iter = 0; iter < NUM_TRIES; ++iter) {
     auto disk_manager = std::make_shared<DiskManager>("test.db");
     auto buffer_pool_manager = std::make_shared<BufferPoolManager>(BUFFER_POOL_SLOT_NUM, disk_manager);
     auto container = std::make_shared<BPlusTree<key_t, value_t>>(buffer_pool_manager);
 
     std::vector<key_t> keys;
-    size_t NUM_KEYS = 20000000;  // 20 million
+    constexpr size_t NUM_KEYS = 20000000;  // 20 million
 
     std::random_device rd;
     std::mt19937 mt(rd());
@@ -67,7 +67,7 @@ TEST(CoreTest, Concurrent_Insert_Test) {
       keys.push_back(dist(mt));
     }
 
-    size_t NUM_THREADS = 10;
+    constexpr size_t NUM_THREADS = 10;
     std::vector<std::thread> insert_threads;
     for (size_t iter = 0; iter < NUM_KEYS;) {
       const std::vector<key_t> keys_interval{keys.begin() + iter, keys.begin() + iter + NUM_KEYS / NUM_THREADS};
@@ -90,14 +90,14 @@ TEST(CoreTest, Concurrent_Insert_Test) {
   }
 }
 
-TEST(CoreTest, DISABLED_Concurrent_Remove_Test) {
+TEST(CoreTest, DISABLED_ConcurrentRemove) {
   for (size_t iter = 0; iter < NUM_TRIES; ++iter) {
     auto disk_manager = std::make_shared<DiskManager>("test.db");
     auto buffer_pool_manager = std::make_shared<BufferPoolManager>(50, disk_manager);
     auto container = std::make_shared<BPlusTree<key_t, value_t>>(buffer_pool_manager);
 
     std::vector<key_t> keys;
-    size_t NUM_KEYS = 20000;
+    constexpr size_t NUM_KEYS = 20000;
 
     std::random_device rd;
     std::mt19937 mt(rd());
@@ -108,12 +108,12 @@ TEST(CoreTest, DISABLED_Concurrent_Remove_Test) {
 
     InsertHelper(container, keys, 1);
 
-    size_t NUM_THREADS = 10;
-    const size_t NUM_PER_THREAD = 10;
+    constexpr size_t NUM_THREADS = 10;
+    constexpr size_t NUM_PER_THREAD = 10;
     std::vector<std::thread> delete_threads;
     for (size_t iter = 0; iter < NUM_THREADS; ++iter) {
-      size_t cur_index = iter * NUM_PER_THREAD;
-      std::vector<key_t> key_interval{keys.begin() + cur_index, keys.begin() + cur_index + NUM_PER_THREAD};
+      size_t current_index = iter * NUM_PER_THREAD;
+      std::vector<key_t> key_interval{keys.begin() + current_index, keys.begin() + current_index + NUM_PER_THREAD};
       LaunchParallelTest(delete_threads, 1, DeleteHelper, container, key_interval);
     }
 
@@ -136,14 +136,14 @@ TEST(CoreTest, DISABLED_Concurrent_Remove_Test) {
   }
 }
 
-TEST(CoreTest, DISABLED_Concurrent_Read_Test) {
+TEST(CoreTest, DISABLED_ConcurrentRead) {
   for (size_t iter = 0; iter < NUM_TRIES; ++iter) {
     auto disk_manager = std::make_shared<DiskManager>("test.db");
     auto buffer_pool_manager = std::make_shared<BufferPoolManager>(50, disk_manager);
     auto container = std::make_shared<BPlusTree<key_t, value_t>>(buffer_pool_manager);
 
     std::vector<key_t> keys;
-    size_t NUM_KEYS = 20000;
+    constexpr size_t NUM_KEYS = 20000;
 
     std::random_device rd;
     std::mt19937 mt(rd());
@@ -152,7 +152,7 @@ TEST(CoreTest, DISABLED_Concurrent_Read_Test) {
       keys.push_back(dist(mt));
     }
 
-    size_t NUM_INSERT_THREADS = 1;
+    constexpr size_t NUM_INSERT_THREADS = 1;
     std::vector<std::thread> insert_threads;
     for (size_t iter = 0; iter < NUM_KEYS;) {
       const std::vector<key_t> keys_interval{keys.begin() + iter, keys.begin() + iter + NUM_KEYS / NUM_INSERT_THREADS};
@@ -178,7 +178,7 @@ TEST(CoreTest, DISABLED_Concurrent_Read_Test) {
 
     std::vector<std::thread> read_threads;
 
-    size_t NUM_THREADS = 4;
+    constexpr size_t NUM_THREADS = 4;
     LaunchParallelTest(read_threads, NUM_THREADS, read_func);
 
     LOG(INFO) << "Waiting " << read_threads.size() << " read threads to finish";
@@ -187,4 +187,4 @@ TEST(CoreTest, DISABLED_Concurrent_Read_Test) {
     remove("test.db");
   }
 }
-}  // namespace miniKV
+}  // namespace dbplay

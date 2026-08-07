@@ -20,7 +20,7 @@
 #include "Common/Config.h"
 #include "Storage/BufferPool/IReplacer.h"
 
-namespace miniKV {
+namespace dbplay {
 
 /**
  * LRUReplacer implements the lru replacement policy, which approximates the
@@ -57,4 +57,4 @@ class LRUReplacer : public IReplacer {
   std::unordered_map<frame_id_t, std::list<frame_id_t>::iterator> unpinned_iter_map_;
 };
 
-}  // namespace miniKV
+}  // namespace dbplay

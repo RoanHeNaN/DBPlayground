@@ -1,14 +1,13 @@
-#include "Storage/BufferPool/BufferPoolManager.h"
-
 #include <cstdio>
 #include <memory>
 #include <random>
 #include <string>
 #include <thread>
 
+#include "Storage/BufferPool/BufferPoolManager.h"
 #include "gtest/gtest.h"
 
-namespace miniKV {
+namespace dbplay {
 
 // NOLINTNEXTLINE
 // Check whether pages containing terminal characters can be recovered
@@ -18,7 +17,7 @@ TEST(BufferPoolManagerTest, BinaryDataTest) {
 
   std::random_device r;
   std::default_random_engine rng(r());
-  std::uniform_int_distribution<char> uniform_dist(0);
+  std::uniform_int_distribution<unsigned int> uniform_dist(0, 255);
 
   auto disk_manager = std::make_shared<DiskManager>(db_name);
   auto bpm = std::make_shared<BufferPoolManager>(buffer_pool_size, disk_manager);
@@ -33,7 +32,7 @@ TEST(BufferPoolManagerTest, BinaryDataTest) {
   char random_binary_data[PAGE_SIZE];
   // Generate random binary data
   for (char &i : random_binary_data) {
-    i = uniform_dist(rng);
+    i = static_cast<char>(uniform_dist(rng));
   }
 
   // Insert terminal characters both in the middle and at end
@@ -137,40 +136,40 @@ TEST(BufferPoolManagerTest, IsDirty) {
   auto bpm = std::make_shared<BufferPoolManager>(1, disk_manager);
 
   auto page0 = bpm->NewPage();
-  page_id_t pageid0 = page0->GetPageId();
+  page_id_t page_id_0 = page0->GetPageId();
 
   ASSERT_NE(nullptr, page0);
   EXPECT_EQ(0, page0->IsDirty());
   strcpy(page0->GetData(), "page0");  // NOLINT
-  EXPECT_EQ(1, bpm->UnpinPage(pageid0, true));
+  EXPECT_EQ(1, bpm->UnpinPage(page_id_0, true));
 
   // Fetch again but don't write. Assert it is still marked as dirty
-  page0 = bpm->FetchPage(pageid0);
+  page0 = bpm->FetchPage(page_id_0);
   ASSERT_NE(nullptr, page0);
   EXPECT_EQ(1, page0->IsDirty());
-  EXPECT_EQ(1, bpm->UnpinPage(pageid0, false));
+  EXPECT_EQ(1, bpm->UnpinPage(page_id_0, false));
 
   // Fetch and assert it is still dirty
-  page0 = bpm->FetchPage(pageid0);
+  page0 = bpm->FetchPage(page_id_0);
   ASSERT_NE(nullptr, page0);
   EXPECT_EQ(1, page0->IsDirty());
-  EXPECT_EQ(1, bpm->UnpinPage(pageid0, false));
+  EXPECT_EQ(1, bpm->UnpinPage(page_id_0, false));
 
   // Create a new page, assert it's not dirty
 
   auto page1 = bpm->NewPage();
-  page_id_t pageid1 = page1->GetPageId();
+  page_id_t page_id_1 = page1->GetPageId();
   ASSERT_NE(nullptr, page1);
   EXPECT_EQ(0, page1->IsDirty());
 
   // Write to the page, and then delete it
   strcpy(page1->GetData(), "page1");  // NOLINT
-  EXPECT_EQ(1, bpm->UnpinPage(pageid1, true));
+  EXPECT_EQ(1, bpm->UnpinPage(page_id_1, true));
   EXPECT_EQ(1, page1->IsDirty());
-  EXPECT_EQ(1, bpm->DeletePage(pageid1));
+  EXPECT_EQ(1, bpm->DeletePage(page_id_1));
 
   // Fetch page 0 again, and confirm its not dirty
-  page0 = bpm->FetchPage(pageid0);
+  page0 = bpm->FetchPage(page_id_0);
   ASSERT_NE(nullptr, page0);
   EXPECT_EQ(0, page0->IsDirty());
 
@@ -335,4 +334,4 @@ TEST(BufferPoolManagerTest, HardTest4) {
     remove("test.db");
   }
 }
-}  // namespace miniKV
+}  // namespace dbplay

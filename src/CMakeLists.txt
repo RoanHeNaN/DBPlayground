@@ -1,15 +1,14 @@
-file(GLOB_RECURSE miniKV_sources ${PROJECT_SOURCE_DIR}/src/*/*.cpp ${PROJECT_SOURCE_DIR}/src/*/*/*.cpp Core/MiniKV.cpp)
-list(REMOVE_ITEM miniKV_sources ${PROJECT_SOURCE_DIR}/src/Container/LeanerProbeHashTable.h ${PROJECT_SOURCE_DIR}/src/Container/LeanerProbeHashTable.cpp)
-list(REMOVE_ITEM miniKV_sources ${PROJECT_SOURCE_DIR}/src/Storage/Page/HashTablePage.h ${PROJECT_SOURCE_DIR}/src/Storage/Page/HashTablePage.cpp)
-list(REMOVE_ITEM miniKV_sources ${PROJECT_SOURCE_DIR}/src/Storage/Page/HashTableHeaderPage.h ${PROJECT_SOURCE_DIR}/src/Storage/Page/HashTableHeaderPage.cpp)
+file(GLOB_RECURSE DBPLAYGROUND_SOURCES ${PROJECT_SOURCE_DIR}/src/*/*.cpp ${PROJECT_SOURCE_DIR}/src/*/*/*.cpp Core/MiniKV.cpp)
+list(REMOVE_ITEM DBPLAYGROUND_SOURCES ${PROJECT_SOURCE_DIR}/src/Container/LinearProbeHashTable.h ${PROJECT_SOURCE_DIR}/src/Container/LinearProbeHashTable.cpp)
+list(REMOVE_ITEM DBPLAYGROUND_SOURCES ${PROJECT_SOURCE_DIR}/src/Storage/Page/HashTablePage.h ${PROJECT_SOURCE_DIR}/src/Storage/Page/HashTablePage.cpp)
+list(REMOVE_ITEM DBPLAYGROUND_SOURCES ${PROJECT_SOURCE_DIR}/src/Storage/Page/HashTableHeaderPage.h ${PROJECT_SOURCE_DIR}/src/Storage/Page/HashTableHeaderPage.cpp)
 
-if (MN_BUILD_SHARED)
-    add_library(miniKV_lib STATIC ${miniKV_sources})
+if(DBPLAYGROUND_BUILD_SHARED)
+    add_library(dbplayground_lib SHARED ${DBPLAYGROUND_SOURCES})
 else()
-    add_library(miniKV_lib SHARED ${miniKV_sources})
+    add_library(dbplayground_lib STATIC ${DBPLAYGROUND_SOURCES})
 endif()
 
-target_include_directories(miniKV_lib PUBLIC ${PROJECT_SOURCE_DIR}/src)
+target_include_directories(dbplayground_lib PUBLIC ${PROJECT_SOURCE_DIR}/src)
 
-target_link_libraries(miniKV_lib glog::glog)
-
+target_link_libraries(dbplayground_lib glog::glog)

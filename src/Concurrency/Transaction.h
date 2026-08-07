@@ -2,8 +2,8 @@
 // Created by 何智强 on 2021/10/5.
 //
 
-#ifndef MINIKV_TRANSACTION_H
-#define MINIKV_TRANSACTION_H
+#ifndef DBPLAYGROUND_TRANSACTION_H
+#define DBPLAYGROUND_TRANSACTION_H
 
 //===----------------------------------------------------------------------===//
 //
@@ -28,7 +28,7 @@
 #include "Common/Config.h"
 #include "Storage/Page/Page.h"
 
-namespace miniKV {
+namespace dbplay {
 
 /**
  * Type of write operation.
@@ -85,6 +85,6 @@ class Transaction {
   std::shared_ptr<std::unordered_set<page_id_t>> deleted_page_set_;
 };
 
-}  // namespace miniKV
+}  // namespace dbplay
 
-#endif  // MINIKV_TRANSACTION_H
+#endif  // DBPLAYGROUND_TRANSACTION_H

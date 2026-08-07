@@ -2,8 +2,8 @@
 // Created by 何智强 on 2021/10/5.
 //
 
-#ifndef MINIKV_BPLUSTREEPAGE_H
-#define MINIKV_BPLUSTREEPAGE_H
+#ifndef DBPLAYGROUND_BPLUSTREEPAGE_H
+#define DBPLAYGROUND_BPLUSTREEPAGE_H
 
 #include <cassert>
 #include <climits>
@@ -14,13 +14,11 @@
 #include "Concurrency/Transaction.h"
 #include "Storage/BufferPool/BufferPoolManager.h"
 
-namespace miniKV {
-
-#define MappingType std::pair<KeyType, ValueType>
+namespace dbplay {
 
 // define page type enum
 
-enum class IndexPageType { INVALID_INDEX_PAGE = 0, LEAF_PAGE, INTERNAL_PAGE };
+enum class IndexPageType { InvalidIndexPage = 0, LeafPage, InternalPage };
 
 #define INDEX_TEMPLATE_ARGUMENTS template <typename KeyType, typename ValueType>
 
@@ -66,6 +64,6 @@ class BPlusTreePage {
   page_id_t page_id_;
 };
 
-}  // namespace miniKV
+}  // namespace dbplay
 
-#endif  // MINIKV_BPLUSTREEPAGE_H
+#endif  // DBPLAYGROUND_BPLUSTREEPAGE_H

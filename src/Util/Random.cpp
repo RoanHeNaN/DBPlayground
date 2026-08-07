@@ -3,3 +3,5 @@
 //
 
 #include "Random.h"
+
+namespace dbplay {}  // namespace dbplay

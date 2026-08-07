@@ -16,7 +16,7 @@
 
 #include "Storage/Page/BPlusTreePage.h"
 
-namespace miniKV {
+namespace dbplay {
 
 #define B_PLUS_TREE_LEAF_PAGE BPlusTreeLeafPage<KeyType, ValueType>
 #define LEAF_PAGE_HEADER_SIZE 24
@@ -43,6 +43,8 @@ namespace miniKV {
 INDEX_TEMPLATE_ARGUMENTS
 class BPlusTreeLeafPage : public BPlusTreePage {
  public:
+  using MappingType = std::pair<KeyType, ValueType>;
+
   // After creating a new leaf page from buffer pool, must call initialize
   // method to set default values
   void Init(page_id_t page_id, page_id_t parent_id = INVALID_PAGE_ID, int max_size = LEAF_PAGE_SIZE);
@@ -64,16 +66,16 @@ class BPlusTreeLeafPage : public BPlusTreePage {
   void MoveFirstToEndOf(BPlusTreeLeafPage *recipient);
   void MoveLastToFrontOf(BPlusTreeLeafPage *recipient);
 
-  std::string toString() const;
+  std::string ToString() const;
 
  private:
   void CopyNFrom(MappingType *items, int size);
   void CopyLastFrom(const MappingType &item);
   void CopyFirstFrom(const MappingType &item);
   page_id_t next_page_id_;
-  // `array` is the name of the variable. The syntax is the same as `MappingType arr[0]` or `int arr[0]`.
-  // To assign `array` to another variable, you must use `const`, since `array` is constant. Example:
-  // `const MappingType *ptr = array;`.
-  MappingType array[0];
+  // `array_` is the name of the variable. The syntax is the same as `MappingType arr[0]` or `int arr[0]`.
+  // To assign `array_` to another variable, you must use `const`, since `array_` is constant. Example:
+  // `const MappingType *ptr = array_;`.
+  MappingType array_[0];
 };
-}  // namespace miniKV
+}  // namespace dbplay

@@ -2,8 +2,8 @@
 // Created by 何智强 on 2021/10/3.
 //
 
-#ifndef MINIKV_DISKMANAGER_H
-#define MINIKV_DISKMANAGER_H
+#ifndef DBPLAYGROUND_DISKMANAGER_H
+#define DBPLAYGROUND_DISKMANAGER_H
 
 #include <fstream>
 #include <iostream>
@@ -12,27 +12,27 @@
 
 #include "Common/Config.h"
 
-namespace miniKV {
+namespace dbplay {
 
 class DiskManager {
  public:
   DiskManager() = delete;
-  DiskManager(std::string db_file_) : db_file_name(db_file_), next_page_id(0) {
-    std::string::size_type n = db_file_name.rfind('.');
-    if (n == std::string::npos) {
+  explicit DiskManager(std::string db_file) : db_file_name_(std::move(db_file)), next_page_id_(0) {
+    std::string::size_type extension_position = db_file_name_.rfind('.');
+    if (extension_position == std::string::npos) {
       std::cout << "wrong file format";
       return;
     }
 
-    db_io.open(db_file_name, std::ios::binary | std::ios::in | std::ios::out);
-    if (!db_io.is_open()) {
-      db_io.clear();
+    db_io_.open(db_file_name_, std::ios::binary | std::ios::in | std::ios::out);
+    if (!db_io_.is_open()) {
+      db_io_.clear();
       // create a new file
-      db_io.open(db_file_name, std::ios::binary | std::ios::trunc | std::ios::out);
-      db_io.close();
+      db_io_.open(db_file_name_, std::ios::binary | std::ios::trunc | std::ios::out);
+      db_io_.close();
       // reopen with original mode
-      db_io.open(db_file_name, std::ios::binary | std::ios::in | std::ios::out);
-      if (!db_io.is_open()) {
+      db_io_.open(db_file_name_, std::ios::binary | std::ios::in | std::ios::out);
+      if (!db_io_.is_open()) {
         throw std::runtime_error("can't open db file");
       }
     }
@@ -45,12 +45,12 @@ class DiskManager {
   void DeallocatePage(page_id_t page_id);
 
  private:
-  const std::string db_file_name;
-  std::fstream db_io;
-  std::atomic<page_id_t> next_page_id;
+  const std::string db_file_name_;
+  std::fstream db_io_;
+  std::atomic<page_id_t> next_page_id_;
 
   int GetFileSize() const;
 };
-}  // namespace miniKV
+}  // namespace dbplay
 
-#endif  // MINIKV_DISKMANAGER_H
+#endif  // DBPLAYGROUND_DISKMANAGER_H

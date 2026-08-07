@@ -1,6 +1,6 @@
 # https://github.com/ClickHouse/ClickHouse/blob/master/contrib/googletest-cmake/CMakeLists.txt
 
-set (SRC_DIR "${MiniKV_SOURCE_DIR}/contrib/googletest")
+set (SRC_DIR "${DBPLAYGROUND_SOURCE_DIR}/contrib/googletest")
 
 add_library(_gtest "${SRC_DIR}/googletest/src/gtest-all.cc")
 set_target_properties(_gtest PROPERTIES VERSION "1.0.0")

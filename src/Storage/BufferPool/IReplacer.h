@@ -14,7 +14,7 @@
 
 #include "Common/Config.h"
 
-namespace miniKV {
+namespace dbplay {
 
 /**
  * Replacer is an abstract class that tracks page usage.
@@ -47,4 +47,4 @@ class IReplacer {
   virtual size_t Size() = 0;
 };
 
-}  // namespace miniKV
+}  // namespace dbplay

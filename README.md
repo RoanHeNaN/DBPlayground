@@ -4,31 +4,27 @@ A platform to show/verify how to integrate other interesting things with a datab
 
 Based on CMU 15445's course project.
 
-## Target list
-
 ## Build
+
 ```bash
-git clone git@github.com:roanhe-ts/miniKV.git
-
-cd miniKV
-
+git clone git@github.com:zhiqiang-hhhh/DBPlayground.git
+cd DBPlayground
 git submodule update --init --recursive
-
-mkdir build
-
-cd build 
-
-cmake ..
+cmake -S . -B build -DDBPLAYGROUND_BUILD_TESTS=ON
+cmake --build build --target dbplayground -j
 ```
-Make test
+
+Build and run an individual test:
+
 ```bash
-make Core_test
+cmake --build build --target BPlusTreeTest -j
+./build/test/BPlusTreeTest
 ```
 
 ## Format
-Use clang-format to auto format
-```bash
-cd build
 
-make format
+Use clang-format to auto format
+
+```bash
+cmake --build build --target format
 ```

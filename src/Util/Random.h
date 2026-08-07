@@ -2,11 +2,13 @@
 // Created by 何智强 on 2021/10/22.
 //
 
-#ifndef MINIKV_RANDOM_H
-#define MINIKV_RANDOM_H
+#ifndef DBPLAYGROUND_RANDOM_H
+#define DBPLAYGROUND_RANDOM_H
 
 #include <cstdint>
 #include <vector>
+
+namespace dbplay {
 
 class Random {
  public:
@@ -14,4 +16,6 @@ class Random {
   std::vector<int32_t> GetSequence();
 };
 
-#endif  // MINIKV_RANDOM_H
+}  // namespace dbplay
+
+#endif  // DBPLAYGROUND_RANDOM_H

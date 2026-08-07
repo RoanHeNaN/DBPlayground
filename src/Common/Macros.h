@@ -15,9 +15,9 @@
 #include <cassert>
 #include <stdexcept>
 
-namespace miniKV {
+namespace dbplay {
 
-#define MINIKV_ASSERT(expr, message) assert((expr) && (message))
+#define DBPLAYGROUND_ASSERT(expr, message) assert((expr) && (message))
 
 #define UNREACHABLE(message) throw std::logic_error(message)
 
@@ -34,4 +34,4 @@ namespace miniKV {
   DISALLOW_COPY(cname);               \
   DISALLOW_MOVE(cname);
 
-}  // namespace miniKV
+}  // namespace dbplay

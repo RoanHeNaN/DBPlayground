@@ -2,13 +2,12 @@
 // Created by 何智强 on 2021/10/11.
 //
 
-#include "Container/BPlusTree.h"
-
 #include <algorithm>
 
+#include "Container/BPlusTree.h"
 #include "gtest/gtest.h"
 
-namespace miniKV {
+namespace dbplay {
 TEST(BPlusTreeTest, InsertTest1) {
   auto disk_manager = std::make_shared<DiskManager>("test.db");
   auto bpm = std::make_shared<BufferPoolManager>(50, disk_manager);
@@ -32,4 +31,4 @@ TEST(BPlusTreeTest, InsertTest1) {
   delete transaction;
   remove("test.db");
 }
-}  // namespace miniKV
+}  // namespace dbplay

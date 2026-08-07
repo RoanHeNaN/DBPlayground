@@ -2,8 +2,8 @@
 // Created by 何智强 on 2021/10/4.
 //
 
-#ifndef MINIKV_IPAGE_H
-#define MINIKV_IPAGE_H
+#ifndef DBPLAYGROUND_PAGE_H
+#define DBPLAYGROUND_PAGE_H
 
 #include <cstring>
 #include <iostream>
@@ -11,7 +11,7 @@
 #include "Base/ReaderWriterLatch.h"
 #include "Common/Config.h"
 
-namespace miniKV {
+namespace dbplay {
 
 class Page {
   friend class BufferPoolManager;
@@ -24,28 +24,28 @@ class Page {
   ~Page() = default;
 
   /** @return the actual data contained within this page */
-  inline char *GetData() { return data; }
+  inline char *GetData() { return data_; }
 
   /** @return the page id of this page */
-  inline page_id_t GetPageId() { return page_id; }
+  inline page_id_t GetPageId() { return page_id_; }
 
   /** @return the pin count of this page */
-  inline int GetPinCount() { return pin_count; }
+  inline int GetPinCount() { return pin_count_; }
 
   /** @return true if the page in memory has been modified from the page on disk, false otherwise */
-  inline bool IsDirty() { return is_dirty; }
+  inline bool IsDirty() { return is_dirty_; }
 
   /** Acquire the page write latch. */
-  inline void WLatch() { rwlatch.WLock(); }
+  inline void WLatch() { rwlatch_.WLock(); }
 
   /** Release the page write latch. */
-  inline void WUnlatch() { rwlatch.WUnlock(); }
+  inline void WUnlatch() { rwlatch_.WUnlock(); }
 
   /** Acquire the page read latch. */
-  inline void RLatch() { rwlatch.RLock(); }
+  inline void RLatch() { rwlatch_.RLock(); }
 
   /** Release the page read latch. */
-  inline void RUnlatch() { rwlatch.RUnlock(); }
+  inline void RUnlatch() { rwlatch_.RUnlock(); }
 
  protected:
   static_assert(sizeof(page_id_t) == 4);
@@ -55,14 +55,14 @@ class Page {
   static constexpr size_t OFFSET_LSN = 4;
 
  private:
-  inline void ResetMemory() { memset(data, OFFSET_PAGE_START, PAGE_SIZE + 16); }
+  inline void ResetMemory() { memset(data_, OFFSET_PAGE_START, PAGE_SIZE + 16); }
 
-  char data[PAGE_SIZE];
-  page_id_t page_id = -1;
-  int pin_count = 0;
-  bool is_dirty = false;
-  ReaderWriterLatch rwlatch;
+  char data_[PAGE_SIZE];
+  page_id_t page_id_ = INVALID_PAGE_ID;
+  int pin_count_ = 0;
+  bool is_dirty_ = false;
+  ReaderWriterLatch rwlatch_;
 };
 
-}  // namespace miniKV
-#endif  // MINIKV_IPAGE_H
+}  // namespace dbplay
+#endif  // DBPLAYGROUND_PAGE_H

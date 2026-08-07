@@ -17,7 +17,7 @@
 #include "Common/Utils.h"
 #include "Storage/Page/BPlusTreePage.h"
 
-namespace miniKV {
+namespace dbplay {
 
 /*****************************************************************************
  * HELPER METHODS AND UTILITIES
@@ -34,7 +34,7 @@ void B_PLUS_TREE_LEAF_PAGE::Init(page_id_t page_id, page_id_t parent_id, int max
   // parent_id = INVALID_PAGE_ID;
   // max_size = LEAF_PAGE_SIZE.
 
-  SetPageType(IndexPageType::LEAF_PAGE);
+  SetPageType(IndexPageType::LeafPage);
   SetSize(0);
   SetPageId(page_id);
   SetParentPageId(parent_id);
@@ -52,30 +52,30 @@ INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_LEAF_PAGE::SetNextPageId(page_id_t next_page_id) { next_page_id_ = next_page_id; }
 
 /**
- * Helper method to find the first index i so that array[i].first >= key
+ * Helper method to find the first index i so that array_[i].first >= key
  * NOTE: This method is only used when generating index iterator
  */
 INDEX_TEMPLATE_ARGUMENTS
 int B_PLUS_TREE_LEAF_PAGE::KeyIndex(const KeyType &key) const {
-  const MappingType *p = std::lower_bound(array, array + GetSize(), key,
+  const MappingType *p = std::lower_bound(array_, array_ + GetSize(), key,
                                           [&](const MappingType &item, const KeyType &k) { return item.first < k; });
 
-  return std::distance(array, p);
+  return std::distance(array_, p);
 }
 
 /*
  * Helper method to find and return the key associated with input "index"(a.k.a
- * array offset)
+ * array_ offset)
  */
 INDEX_TEMPLATE_ARGUMENTS
-KeyType B_PLUS_TREE_LEAF_PAGE::KeyAt(int index) const { return array[index].first; }
+KeyType B_PLUS_TREE_LEAF_PAGE::KeyAt(int index) const { return array_[index].first; }
 
 /*
  * Helper method to find and return the key & value pair associated with input
- * "index"(a.k.a array offset)
+ * "index"(a.k.a array_ offset)
  */
 INDEX_TEMPLATE_ARGUMENTS
-const MappingType &B_PLUS_TREE_LEAF_PAGE::GetItem(int index) { return array[index]; }
+auto B_PLUS_TREE_LEAF_PAGE::GetItem(int index) -> const MappingType & { return array_[index]; }
 
 //*****************************************************************************
 //* INSERTION
@@ -92,11 +92,11 @@ int B_PLUS_TREE_LEAF_PAGE::Insert(const KeyType &key, const ValueType &value) {
 
   // make room
   for (int i = GetSize() - 1; i >= insert_position; i--) {
-    array[i + 1] = array[i];
+    array_[i + 1] = array_[i];
   }
 
   // insert key-value pair
-  array[insert_position] = MappingType{key, value};
+  array_[insert_position] = MappingType{key, value};
 
   // update size
   IncreaseSize(1);
@@ -115,12 +115,12 @@ INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_LEAF_PAGE::MoveHalfTo(BPlusTreeLeafPage *recipient) {
   // Currently, this is only called when recipient is empty (in Split)
 
-  // Move array[(size+1)/2 : size-1].
+  // Move array_[(size+1)/2 : size-1].
   // Number of elements moved: size-1 - (size+1)/2 + 1 = size-(size+1)/2 = size-ceil(size/2) = floor(size/2)
   // After move, this->GetSize() >= recipient->GetSize().
   int move_start = (GetSize() + 1) / 2;
   int num_moved = GetSize() - move_start;
-  recipient->CopyNFrom(&array[move_start], num_moved);
+  recipient->CopyNFrom(&array_[move_start], num_moved);
 
   IncreaseSize(-num_moved);
   recipient->IncreaseSize(num_moved);
@@ -138,7 +138,7 @@ void B_PLUS_TREE_LEAF_PAGE::CopyNFrom(MappingType *items, int size) {
 
   int old_size = GetSize();
   for (int i = 0; i < size; i++) {
-    array[old_size + i] = items[i];
+    array_[old_size + i] = items[i];
   }
 }
 
@@ -155,9 +155,9 @@ INDEX_TEMPLATE_ARGUMENTS
 bool B_PLUS_TREE_LEAF_PAGE::Lookup(const KeyType &key, ValueType *value) const {
   /* Linear search */
   // for (int i = 0; i < GetSize(); i++) {
-  //   if (comparator(array[i].first, key) == 0) {
+  //   if (comparator(array_[i].first, key) == 0) {
   //     if (value != nullptr) {
-  //       *value = array[i].second;
+  //       *value = array_[i].second;
   //     }
   //     return true;
   //   }
@@ -166,9 +166,9 @@ bool B_PLUS_TREE_LEAF_PAGE::Lookup(const KeyType &key, ValueType *value) const {
 
   /* Binary search */
   int pos = KeyIndex(key);
-  if (pos < GetSize() && (array[pos].first == key)) {
+  if (pos < GetSize() && (array_[pos].first == key)) {
     if (value != nullptr) {
-      *value = array[pos].second;
+      *value = array_[pos].second;
     }
     return true;
   }
@@ -188,9 +188,9 @@ INDEX_TEMPLATE_ARGUMENTS
 int B_PLUS_TREE_LEAF_PAGE::RemoveAndDeleteRecord(const KeyType &key) {
   /* Binary search */
   int pos = KeyIndex(key);
-  if (pos < GetSize() && (array[pos].first == key)) {
+  if (pos < GetSize() && (array_[pos].first == key)) {
     for (int j = pos + 1; j < GetSize(); j++) {
-      array[j - 1] = array[j];
+      array_[j - 1] = array_[j];
     }
     IncreaseSize(-1);
   }
@@ -213,7 +213,7 @@ void B_PLUS_TREE_LEAF_PAGE::MoveAllTo(BPlusTreeLeafPage *recipient) {
   // If we are moving to the right sibling (recipient), we need to update the left sibling
   int sz = GetSize();
 
-  recipient->CopyNFrom(array, sz);
+  recipient->CopyNFrom(array_, sz);
   recipient->SetNextPageId(GetNextPageId());
 
   recipient->IncreaseSize(sz);
@@ -230,11 +230,11 @@ void B_PLUS_TREE_LEAF_PAGE::MoveAllTo(BPlusTreeLeafPage *recipient) {
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_LEAF_PAGE::MoveFirstToEndOf(BPlusTreeLeafPage *recipient) {
   // Copy element to recipient's last position
-  recipient->CopyLastFrom(array[0]);
+  recipient->CopyLastFrom(array_[0]);
 
-  // Remove first element from my array
+  // Remove first element from my array_
   for (int i = 1; i < GetSize(); i++) {
-    array[i - 1] = array[i];
+    array_[i - 1] = array_[i];
   }
 
   // update size for both nodes
@@ -249,7 +249,7 @@ void B_PLUS_TREE_LEAF_PAGE::MoveFirstToEndOf(BPlusTreeLeafPage *recipient) {
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_LEAF_PAGE::MoveLastToFrontOf(BPlusTreeLeafPage *recipient) {
   // Copy element to recipient's front position
-  recipient->CopyFirstFrom(array[GetSize() - 1]);
+  recipient->CopyFirstFrom(array_[GetSize() - 1]);
 
   // No need to remove the last element. The caller can just update the size.
 
@@ -259,11 +259,11 @@ void B_PLUS_TREE_LEAF_PAGE::MoveLastToFrontOf(BPlusTreeLeafPage *recipient) {
 }
 
 /*
- * Copy the item into the end of my item list. (Append item to my array)
+ * Copy the item into the end of my item list. (Append item to my array_)
  * [Attention] This function doesn't update size.
  */
 INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_LEAF_PAGE::CopyLastFrom(const MappingType &item) { array[GetSize()] = item; }
+void B_PLUS_TREE_LEAF_PAGE::CopyLastFrom(const MappingType &item) { array_[GetSize()] = item; }
 
 /*
  * Insert item at the front of my items. Move items accordingly.
@@ -273,12 +273,12 @@ INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_LEAF_PAGE::CopyFirstFrom(const MappingType &item) {
   // make space
   for (int i = GetSize() - 1; i >= 0; i--) {
-    array[i + 1] = array[i];
+    array_[i + 1] = array_[i];
   }
 
   // copy element
-  array[0] = item;
+  array_[0] = item;
 }
 
 template class BPlusTreeLeafPage<key_t, value_t>;
-}  // namespace miniKV
+}  // namespace dbplay

@@ -14,7 +14,7 @@
 
 #include "Storage/Page/BPlusTreePage.h"
 
-namespace miniKV {
+namespace dbplay {
 
 #define B_PLUS_TREE_INTERNAL_PAGE BPlusTreeInternalPage<KeyType, ValueType>
 #define INTERNAL_PAGE_HEADER_SIZE 24
@@ -35,6 +35,8 @@ namespace miniKV {
 INDEX_TEMPLATE_ARGUMENTS
 class BPlusTreeInternalPage : public BPlusTreePage {
  public:
+  using MappingType = std::pair<KeyType, ValueType>;
+
   // must call initialize method after "create" a new node
   void Init(page_id_t page_id, page_id_t parent_id = INVALID_PAGE_ID, int max_size = INTERNAL_PAGE_SIZE);
 
@@ -62,6 +64,6 @@ class BPlusTreeInternalPage : public BPlusTreePage {
   void CopyNFrom(MappingType *items, int size, std::shared_ptr<BufferPoolManager> buffer_pool_manager);
   void CopyLastFrom(const MappingType &pair, std::shared_ptr<BufferPoolManager> buffer_pool_manager);
   void CopyFirstFrom(const MappingType &pair, std::shared_ptr<BufferPoolManager> buffer_pool_manager);
-  MappingType array[0];
+  MappingType array_[0];
 };
-}  // namespace miniKV
+}  // namespace dbplay

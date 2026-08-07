@@ -11,13 +11,13 @@
 
 #include "Storage/Page/BPlusTreePage.h"
 
-namespace miniKV {
+namespace dbplay {
 
 /*
  * Helper methods to get/set page type
  * Page type enum class is defined in b_plus_tree_page.h
  */
-bool BPlusTreePage::IsLeafPage() const { return page_type_ == IndexPageType::LEAF_PAGE; }
+bool BPlusTreePage::IsLeafPage() const { return page_type_ == IndexPageType::LeafPage; }
 bool BPlusTreePage::IsRootPage() const { return parent_page_id_ == INVALID_PAGE_ID; }
 void BPlusTreePage::SetPageType(IndexPageType page_type) { page_type_ = page_type; }
 
@@ -64,4 +64,4 @@ void BPlusTreePage::SetParentPageId(page_id_t parent_page_id) { parent_page_id_ 
 page_id_t BPlusTreePage::GetPageId() const { return page_id_; }
 void BPlusTreePage::SetPageId(page_id_t page_id) { page_id_ = page_id; }
 
-}  // namespace miniKV
+}  // namespace dbplay

@@ -1,4 +1,4 @@
-set (SOURCE_DIR ${MiniKV_SOURCE_DIR}/contrib/zlib-ng)
+set (SOURCE_DIR ${DBPLAYGROUND_SOURCE_DIR}/contrib/zlib-ng)
 
 add_definitions(-DZLIB_COMPAT)
 add_definitions(-DWITH_GZFILEOP)

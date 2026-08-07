@@ -2,8 +2,8 @@
 // Created by 何智强 on 2021/10/5.
 //
 
-#ifndef MINIKV_BPLUSTREE_H
-#define MINIKV_BPLUSTREE_H
+#ifndef DBPLAYGROUND_BPLUSTREE_H
+#define DBPLAYGROUND_BPLUSTREE_H
 
 //===----------------------------------------------------------------------===//
 //
@@ -29,7 +29,7 @@
 #include "Storage/Page/BPlusTreeLeafPage.h"
 #include "Storage/Page/BPlusTreePage.h"
 
-namespace miniKV {
+namespace dbplay {
 
 #define BPLUSTREE BPlusTree<KeyType, ValueType>
 
@@ -45,6 +45,7 @@ namespace miniKV {
  */
 INDEX_TEMPLATE_ARGUMENTS
 class BPlusTree {
+  using MappingType = std::pair<KeyType, ValueType>;
   using InternalPage = BPlusTreeInternalPage<KeyType, page_id_t>;
   using LeafPage = BPlusTreeLeafPage<KeyType, ValueType>;
 
@@ -85,7 +86,7 @@ class BPlusTree {
 
  private:
   // expose for test purpose
-  std::shared_ptr<Page> FindLeafPage(const KeyType &key, bool leftMost = false);
+  std::shared_ptr<Page> FindLeafPage(const KeyType &key, bool left_most = false);
 
   void StartNewTree(const KeyType &key, const ValueType &value);
 
@@ -122,26 +123,26 @@ class BPlusTree {
   std::shared_ptr<Page> FindLeafPageRW(const KeyType &key, bool left_most, enum OpType op, Transaction *transaction);
 
   template <typename N>
-  bool fitOne(N *node1, N *node2);
+  bool FitOne(N *node1, N *node2);
 
   template <typename N>
-  int minSize(N *node);
+  int MinSize(N *node);
 
   template <typename N>
-  int maxSize(N *node);
+  int MaxSize(N *node);
 
   template <typename N>
-  bool isSafe(N *node, enum OpType op);
+  bool IsSafe(N *node, enum OpType op);
 
   void UnlatchAndUnpin(enum OpType op, Transaction *transaction) const;
 
-  page_id_t root_page_id_;  // acquire root_mutex before r/w root_page_id
-  std::mutex root_mutex;    // protect root_page_id
+  page_id_t root_page_id_;  // acquire root_mutex_ before r/w root_page_id
+  std::mutex root_mutex_;   // protect root_page_id
   std::shared_ptr<BufferPoolManager> buffer_pool_manager_;
   size_t leaf_max_size_;
   size_t internal_max_size_;
 };
 
-}  // namespace miniKV
+}  // namespace dbplay
 
-#endif  // MINIKV_BPLUSTREE_H
+#endif  // DBPLAYGROUND_BPLUSTREE_H

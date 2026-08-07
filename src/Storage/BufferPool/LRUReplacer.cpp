@@ -10,13 +10,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Storage/BufferPool/LRUReplaceer.h"
+#include "Storage/BufferPool/LRUReplacer.h"
 
 #include <cstddef>
 #include <fstream>
 #include <stack>
 
-namespace miniKV {
+namespace dbplay {
 // bool mocked = false;
 
 LRUReplacer::LRUReplacer(size_t num_pages) : num_pages_(num_pages) {}
@@ -70,4 +70,4 @@ size_t LRUReplacer::Size() {
   return unpinned_pages_.size();
 }
 
-}  // namespace miniKV
+}  // namespace dbplay

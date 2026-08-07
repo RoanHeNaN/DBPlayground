@@ -2,14 +2,14 @@
 // Created by 何智强 on 2021/10/3.
 //
 
-#ifndef MINIKV_RID_H
-#define MINIKV_RID_H
+#ifndef DBPLAYGROUND_RID_H
+#define DBPLAYGROUND_RID_H
 
 #include <string>
 
 #include "Config.h"
 
-namespace miniKV {
+namespace dbplay {
 
 class RID {
  public:
@@ -56,6 +56,6 @@ class RID {
   uint32_t slot_num_{0};  // logical offset from 0, 1...
 };
 
-}  // namespace miniKV
+}  // namespace dbplay
 
-#endif  // MINIKV_RID_H
+#endif  // DBPLAYGROUND_RID_H

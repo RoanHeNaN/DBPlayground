@@ -3,11 +3,11 @@
 
 #include <string>
 
-namespace miniKV {
+namespace dbplay {
 
 // Reference: https://stackoverflow.com/a/32821650/9057530
 template <typename... Args>
-std::string strf(const char *format, Args... args) {
+std::string StrFormat(const char *format, Args... args) {
   int length = std::snprintf(nullptr, 0, format, args...);
 
   char *buf = new char[length + 1];
@@ -17,4 +17,4 @@ std::string strf(const char *format, Args... args) {
   delete[] buf;
   return str;
 }
-}  // namespace miniKV
+}  // namespace dbplay

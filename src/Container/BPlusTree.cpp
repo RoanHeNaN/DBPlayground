@@ -9,7 +9,7 @@
 
 #include "Storage/Page/Page.h"
 
-namespace miniKV {
+namespace dbplay {
 INDEX_TEMPLATE_ARGUMENTS
 BPLUSTREE::BPlusTree(std::shared_ptr<BufferPoolManager> buffer_pool_manager, size_t leaf_max_size,
                      size_t internal_max_size)
@@ -19,7 +19,7 @@ BPLUSTREE::BPlusTree(std::shared_ptr<BufferPoolManager> buffer_pool_manager, siz
       internal_max_size_(internal_max_size) {}
 
 // This function doesn't provide concurrency control for accessing root_page_id.
-// The caller should acquire root_mutex throughout the call.
+// The caller should acquire root_mutex_ throughout the call.
 INDEX_TEMPLATE_ARGUMENTS
 bool BPLUSTREE::IsEmpty() const { return root_page_id_ == INVALID_PAGE_ID; }
 
@@ -43,7 +43,7 @@ bool BPLUSTREE::GetValue(const KeyType &key, ValueType &value, Transaction *tran
     allocated = true;
   }
 
-  std::unique_lock root_lock(root_mutex);  // locked, guaranteed unlock before return
+  std::unique_lock root_lock(root_mutex_);  // locked, guaranteed unlock before return
 
   auto page = FindLeafPageRW(key, false, OpType::Read, transaction);  // pinned, latched
   bool root_page_safe = transaction->GetPageSet()->front()->GetPageId() != root_page_id_;
@@ -85,7 +85,7 @@ bool BPLUSTREE::Insert(const KeyType &key, const ValueType &value, Transaction *
  * an "out of memory" exception if returned value is nullptr), then update b+
  * tree's root page id and insert entry directly into leaf page.
  *
- * The caller should hold root_mutex throughout the call.
+ * The caller should hold root_mutex_ throughout the call.
  */
 INDEX_TEMPLATE_ARGUMENTS
 void BPLUSTREE::StartNewTree(const KeyType &key, const ValueType &value) {
@@ -125,9 +125,9 @@ void BPLUSTREE::StartNewTree(const KeyType &key, const ValueType &value) {
  */
 INDEX_TEMPLATE_ARGUMENTS
 bool BPLUSTREE::InsertIntoLeaf(const KeyType &key, const ValueType &value, Transaction *transaction) {
-  std::unique_lock root_lock(root_mutex);  // locked, guaranteed unlock before return
+  std::unique_lock root_lock(root_mutex_);  // locked, guaranteed unlock before return
   if (IsEmpty()) {
-    StartNewTree(key, value);  // root_mutex held throughout the call
+    StartNewTree(key, value);  // root_mutex_ held throughout the call
     return true;
   }
 
@@ -137,7 +137,7 @@ bool BPLUSTREE::InsertIntoLeaf(const KeyType &key, const ValueType &value, Trans
     allocated = true;
   }
 
-  // root_mutex already held
+  // root_mutex_ already held
   auto leaf_page = FindLeafPageRW(key, false, OpType::Insert, transaction);  // leaf_page pinned, page(s) latched
   bool root_page_safe = transaction->GetPageSet()->front()->GetPageId() != root_page_id_;
   if (root_page_safe) {
@@ -156,7 +156,7 @@ bool BPLUSTREE::InsertIntoLeaf(const KeyType &key, const ValueType &value, Trans
   leaf_node->Insert(key, value);
 
   // Split if necessary. When size=leaf_max_size, split. See SplitTest.
-  if (leaf_node->GetSize() == maxSize(leaf_node) + 1) {
+  if (leaf_node->GetSize() == MaxSize(leaf_node) + 1) {
     // If we enter this branch, leaf_node is not safe, so parent must have been latched.
 
     // Split: 1. Redistribute evenly; 2. Copy up middle key.
@@ -279,7 +279,7 @@ void BPLUSTREE::InsertIntoParent(BPlusTreePage *old_node, const KeyType &key, BP
     // where new key is the minimum key of the new node.
     parent_node->InsertNodeAfter(old_node->GetPageId(), key, new_node->GetPageId());
 
-    if (parent_node->GetSize() == maxSize(parent_node) + 1) {
+    if (parent_node->GetSize() == MaxSize(parent_node) + 1) {
       // no need to wlatch new_parent_node
       InternalPage *new_parent_node = Split(parent_node);  // new_parent_node pinned
 
@@ -317,7 +317,7 @@ void BPLUSTREE::Remove(const KeyType &key, Transaction *transaction) {
     allocated = true;
   }
 
-  std::unique_lock root_lock(root_mutex);                                    // locked, guaranteed unlock before return
+  std::unique_lock root_lock(root_mutex_);                                   // locked, guaranteed unlock before return
   auto leaf_page = FindLeafPageRW(key, false, OpType::Remove, transaction);  // leaf_page pinned, page(s) latched
 
   bool root_page_safe = transaction->GetPageSet()->front()->GetPageId() != root_page_id_;
@@ -330,7 +330,7 @@ void BPLUSTREE::Remove(const KeyType &key, Transaction *transaction) {
 
   leaf_node->RemoveAndDeleteRecord(key);
 
-  if (leaf_node->GetSize() < minSize(leaf_node)) {
+  if (leaf_node->GetSize() < MinSize(leaf_node)) {
     bool delete_leaf = CoalesceOrRedistribute(leaf_node, transaction, key);  // leaf_page will be unpinned
     if (delete_leaf) {
       buffer_pool_manager_->DeletePage(leaf_page_id);
@@ -363,7 +363,7 @@ bool BPLUSTREE::CoalesceOrRedistribute(N *node, Transaction *txn, const KeyType 
       // when root is leaf page and size=0, delete the only page.
       BPlusTreePage *old_root = reinterpret_cast<BPlusTreePage *>(node);
 
-      // If root is not safe, root_mutex is already held
+      // If root is not safe, root_mutex_ is already held
       bool del_root = AdjustRoot(old_root);
 
       if (del_root) {
@@ -391,7 +391,7 @@ bool BPLUSTREE::CoalesceOrRedistribute(N *node, Transaction *txn, const KeyType 
     left_sib_page->WLatch();
     N *left_sib = reinterpret_cast<N *>(left_sib_page->GetData());
 
-    if (fitOne(left_sib, node)) {
+    if (FitOne(left_sib, node)) {
       bool del_parent = Coalesce(&left_sib, &node, &parent, index_in_parent, txn);  // node unpinned and deleted
 
       left_sib_page->WUnlatch();
@@ -415,7 +415,7 @@ bool BPLUSTREE::CoalesceOrRedistribute(N *node, Transaction *txn, const KeyType 
     right_sib_page->WLatch();
     N *right_sib = reinterpret_cast<N *>(right_sib_page->GetData());
 
-    if (fitOne(right_sib, node)) {
+    if (FitOne(right_sib, node)) {
       bool del_parent = Coalesce(&node, &right_sib, &parent, right_sib_index, txn);  // right_sib unpinned and deleted
 
       right_sib_page->WUnlatch();
@@ -439,7 +439,7 @@ bool BPLUSTREE::CoalesceOrRedistribute(N *node, Transaction *txn, const KeyType 
     left_sib_page->WLatch();
     N *left_sib = reinterpret_cast<N *>(left_sib_page->GetData());
 
-    if (left_sib->GetSize() > minSize(left_sib)) {
+    if (left_sib->GetSize() > MinSize(left_sib)) {
       // std::cout << strf("-(%d): borrow from page %d (l) to page %d\n", key, left_sib->GetPageId(),
       // node->GetPageId());
       Redistribute(left_sib, node, -1);  // Move left_sib's last key&value pair to the head of node
@@ -462,7 +462,7 @@ bool BPLUSTREE::CoalesceOrRedistribute(N *node, Transaction *txn, const KeyType 
     right_sib_page->WLatch();
     N *right_sib = reinterpret_cast<N *>(right_sib_page->GetData());
 
-    if (right_sib->GetSize() > minSize(right_sib)) {
+    if (right_sib->GetSize() > MinSize(right_sib)) {
       // std::cout << strf("-(%d): borrow from page %d (r) to page %d\n",key, right_sib->GetPageId(),
       // node->GetPageId());
       Redistribute(right_sib, node, 0);  // Move right_sib's first key&value pair to the head of node
@@ -488,7 +488,7 @@ bool BPLUSTREE::CoalesceOrRedistribute(N *node, Transaction *txn, const KeyType 
  * redistribute recursively if necessary.
  * Using template N to represent either internal page or leaf page.
  * @param   neighbor_node      sibling page of input "node"
- * @param   node               input from method coalesceOrRedistribute()
+ * @param   node               input from method CoalesceOrRedistribute()
  * @param   parent             parent page of input "node"
  * @para    index              index of key in parent that should be removed.
  * @return  true means parent node should be deleted, false means no deletion happens
@@ -523,7 +523,7 @@ bool BPLUSTREE::Coalesce(N **neighbor_node, N **node, BPlusTreeInternalPage<KeyT
   (*parent)->Remove(index);
 
   // If parent is underfull, recursive operation
-  if ((*parent)->GetSize() < minSize(*parent)) {
+  if ((*parent)->GetSize() < MinSize(*parent)) {
     return CoalesceOrRedistribute(*parent, transaction, KeyType{});
   }
 
@@ -537,7 +537,7 @@ bool BPLUSTREE::Coalesce(N **neighbor_node, N **node, BPlusTreeInternalPage<KeyT
  * "node".
  * Using template N to represent either internal page or leaf page.
  * @param   neighbor_node      sibling page of input "node"
- * @param   node               input from method coalesceOrRedistribute()
+ * @param   node               input from method CoalesceOrRedistribute()
  */
 INDEX_TEMPLATE_ARGUMENTS
 template <typename N>
@@ -586,14 +586,14 @@ void BPLUSTREE::Redistribute(N *neighbor_node, N *node, int index) {
 /*
  * Update root page if necessary
  * NOTE: size of root page can be less than min size and this method is only
- * called within coalesceOrRedistribute() method
+ * called within CoalesceOrRedistribute() method
  * case 1: when you delete the last element in root page, but root page still
  * has one last child
  * case 2: when you delete the last element in whole b+ tree
  * @return : true means root page should be deleted, false means no deletion
  * happens
  *
- * The caller should hold root_mutex throughout the call.
+ * The caller should hold root_mutex_ throughout the call.
  */
 INDEX_TEMPLATE_ARGUMENTS
 bool BPLUSTREE::AdjustRoot(BPlusTreePage *old_root_node) {
@@ -632,7 +632,7 @@ bool BPLUSTREE::AdjustRoot(BPlusTreePage *old_root_node) {
  */
 INDEX_TEMPLATE_ARGUMENTS
 template <typename N>
-bool BPLUSTREE::fitOne(N *node1, N *node2) {
+bool BPLUSTREE::FitOne(N *node1, N *node2) {
   if (node1->IsLeafPage()) {
     return node1->GetSize() + node2->GetSize() <= leaf_max_size_ - 1;
   }
@@ -648,10 +648,10 @@ bool BPLUSTREE::fitOne(N *node1, N *node2) {
  */
 INDEX_TEMPLATE_ARGUMENTS
 template <typename N>
-bool BPLUSTREE::isSafe(N *node, enum OpType op) {
+bool BPLUSTREE::IsSafe(N *node, enum OpType op) {
   // insert
   if (op == OpType::Insert) {
-    return node->GetSize() < maxSize(node);
+    return node->GetSize() < MaxSize(node);
   }
 
   // remove
@@ -665,7 +665,7 @@ bool BPLUSTREE::isSafe(N *node, enum OpType op) {
     return node->GetSize() > 2;
   }
 
-  return node->GetSize() > minSize(node);
+  return node->GetSize() > MinSize(node);
 }
 
 /*
@@ -675,7 +675,7 @@ bool BPLUSTREE::isSafe(N *node, enum OpType op) {
  * Index iterator is not tested for concurrent access, so they use FindLeafPage.
  * Other read/write operations to the B+ tree should use this function, with concurrency control.
  *
- * root_mutex is held throughout the call, to avoid deadlock.
+ * root_mutex_ is held throughout the call, to avoid deadlock.
  *
  * @param latched latched page ids. This is not needed if read_only = true.
  */
@@ -694,7 +694,7 @@ std::shared_ptr<Page> BPLUSTREE::FindLeafPageRW(const KeyType &key, bool left_mo
       UnlatchAndUnpin(op, transaction);
     } else {
       page->WLatch();
-      if (isSafe(node, op)) {
+      if (IsSafe(node, op)) {
         UnlatchAndUnpin(op, transaction);
       }
     }
@@ -738,7 +738,7 @@ void BPLUSTREE::UnlatchAndUnpin(enum OpType op, Transaction *transaction) const 
  */
 INDEX_TEMPLATE_ARGUMENTS
 template <typename N>
-int BPLUSTREE::minSize(N *node) {
+int BPLUSTREE::MinSize(N *node) {
   // leaf_page: ceil((n-1)/2) = floor(n/2), internal_page: ceil(n/2) = floor((n+1)/2)
   return node->IsLeafPage() ? leaf_max_size_ / 2 : (internal_max_size_ + 1) / 2;
 }
@@ -749,7 +749,7 @@ int BPLUSTREE::minSize(N *node) {
  */
 INDEX_TEMPLATE_ARGUMENTS
 template <typename N>
-int BPLUSTREE::maxSize(N *node) {
+int BPLUSTREE::MaxSize(N *node) {
   return node->IsLeafPage() ? leaf_max_size_ - 1 : internal_max_size_;
 }
 
@@ -758,19 +758,19 @@ int BPLUSTREE::maxSize(N *node) {
 //****************************************************************************
 
 /*
- * Find leaf page containing particular key, if leftMost flag == true, find
+ * Find leaf page containing particular key, if left_most flag == true, find
  * the left most leaf page.
  *
  * This is implemented for test purpose. You should use FindLeafPageRW.
  */
 INDEX_TEMPLATE_ARGUMENTS
-std::shared_ptr<Page> BPLUSTREE::FindLeafPage(const KeyType &key, bool leftMost) {
+std::shared_ptr<Page> BPLUSTREE::FindLeafPage(const KeyType &key, bool left_most) {
   auto page = buffer_pool_manager_->FetchPage(root_page_id_);
   BPlusTreePage *node = reinterpret_cast<BPlusTreePage *>(page->GetData());
 
   while (!node->IsLeafPage()) {
     InternalPage *internal_node = reinterpret_cast<InternalPage *>(node);
-    page_id_t next_page_id = leftMost ? internal_node->ValueAt(0) : internal_node->Lookup(key);
+    page_id_t next_page_id = left_most ? internal_node->ValueAt(0) : internal_node->Lookup(key);
 
     auto next_page = buffer_pool_manager_->FetchPage(next_page_id);  // next_level_page pinned
     BPlusTreePage *next_node = reinterpret_cast<BPlusTreePage *>(next_page->GetData());
@@ -788,4 +788,4 @@ INDEX_TEMPLATE_ARGUMENTS
 void BPLUSTREE::UpdateRootPageId(int insert_record) {}
 
 template class BPlusTree<key_t, value_t>;
-}  // namespace miniKV
+}  // namespace dbplay

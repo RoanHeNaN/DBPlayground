@@ -9,9 +9,11 @@
 
 #include "Base/BoundedQueue.h"
 
+namespace dbplay {
+
 template <typename... Args>
 void LaunchParallelThreads(std::vector<std::thread> &threads, size_t num_threads, Args &&...args) {
-  for (size_t thread_itr = 0; thread_itr < num_threads; ++thread_itr) {
+  for (size_t thread_index = 0; thread_index < num_threads; ++thread_index) {
     threads.push_back(std::thread(std::forward<Args>(args)...));
   }
 }
@@ -30,8 +32,7 @@ void PushHelper(const std::vector<int32_t> &keys, BoundedQueue<int32_t> &queue) 
 
 TEST(BaseTest, BoundedQueuePushTest) {
   const size_t queue_size = 30;
-  const size_t thread_num = 5;
-  std::shared_ptr<BoundedQueue<int32_t>> queue_ptr = std::make_shared<BoundedQueue<int32_t>>(100);
+  const size_t thread_count = 5;
   BoundedQueue<int32_t> queue(queue_size);
   std::vector<int32_t> keys;
 
@@ -40,7 +41,7 @@ TEST(BaseTest, BoundedQueuePushTest) {
   }
 
   std::vector<std::thread> threads;
-  LaunchParallelThreads(threads, thread_num, PushHelper, keys, std::ref(queue));
+  LaunchParallelThreads(threads, thread_count, PushHelper, keys, std::ref(queue));
 
   std::vector<int32_t> values;
   while (true) {
@@ -48,10 +49,12 @@ TEST(BaseTest, BoundedQueuePushTest) {
     queue.Pop(value);
     values.emplace_back(value);
 
-    if (values.size() == queue_size * thread_num) break;
+    if (values.size() == queue_size * thread_count) break;
   }
 
   WaitThreadFinish(threads);
 
-  ASSERT_EQ(values.size(), queue_size * thread_num);
+  ASSERT_EQ(values.size(), queue_size * thread_count);
 }
+
+}  // namespace dbplay

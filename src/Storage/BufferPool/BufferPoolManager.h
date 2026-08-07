@@ -2,8 +2,8 @@
 // Created by 何智强 on 2021/10/2.
 //
 
-#ifndef MINIKV_BUFFERPOOLMANAGER_H
-#define MINIKV_BUFFERPOOLMANAGER_H
+#ifndef DBPLAYGROUND_BUFFERPOOLMANAGER_H
+#define DBPLAYGROUND_BUFFERPOOLMANAGER_H
 
 #include <list>
 #include <unordered_map>
@@ -13,18 +13,18 @@
 #include "Storage/Disk/DiskManager.h"
 #include "Storage/Page/Page.h"
 
-namespace miniKV {
+namespace dbplay {
 class BufferPoolManager {
  public:
   BufferPoolManager() = default;
   /**
    * Create a new buffer pool manager.
    * @param slot_num Number of pages in buffer, page size is defiend in src/Common/Config.h.
-   * @param disk_manager_ A buffer pool manager.
+   * @param disk_manager Disk manager used for page I/O.
    */
-  BufferPoolManager(size_t slot_num, std::shared_ptr<DiskManager> disk_manager_);
+  BufferPoolManager(size_t slot_num, std::shared_ptr<DiskManager> disk_manager);
 
-  std::shared_ptr<Page> FetchPage(miniKV::page_id_t page_id);
+  std::shared_ptr<Page> FetchPage(page_id_t page_id);
   bool UnpinPage(page_id_t page_id, bool is_dirty);
   bool FlushPage(page_id_t page_id);
   std::shared_ptr<Page> NewPage();
@@ -32,14 +32,14 @@ class BufferPoolManager {
   void FlushAllPages();
 
  private:
-  std::size_t slot_num;
-  std::shared_ptr<DiskManager> disk_manager;
-  std::unique_ptr<IReplacer> replacer;
-  std::vector<std::shared_ptr<Page>> pages;
-  std::list<frame_id_t> free_list;
-  std::mutex latch;
-  std::unordered_map<page_id_t, frame_id_t> page_table;
+  std::size_t slot_num_;
+  std::shared_ptr<DiskManager> disk_manager_;
+  std::unique_ptr<IReplacer> replacer_;
+  std::vector<std::shared_ptr<Page>> pages_;
+  std::list<frame_id_t> free_list_;
+  std::mutex latch_;
+  std::unordered_map<page_id_t, frame_id_t> page_table_;
 };
-}  // namespace miniKV
+}  // namespace dbplay
 
-#endif  // MINIKV_BUFFERPOOLMANAGER_H
+#endif  // DBPLAYGROUND_BUFFERPOOLMANAGER_H
