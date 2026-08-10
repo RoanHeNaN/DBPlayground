@@ -14,6 +14,9 @@
 #include <algorithm>
 #include <sstream>
 
+#include "Common/EncodedKey.h"
+#include "Common/RID.h"
+
 #include "Common/Utils.h"
 #include "Storage/Page/BPlusTreePage.h"
 
@@ -281,4 +284,6 @@ void B_PLUS_TREE_LEAF_PAGE::CopyFirstFrom(const MappingType &item) {
 }
 
 template class BPlusTreeLeafPage<key_t, value_t>;
+// Phase 2: leaf stores (order-preserving key, RID into the TupleStore).
+template class BPlusTreeLeafPage<EncodedKey, RID>;
 }  // namespace dbplay

@@ -7,6 +7,8 @@
 #include <iostream>
 #include <string>
 
+#include "Common/EncodedKey.h"
+#include "Common/RID.h"
 #include "Storage/Page/Page.h"
 
 namespace dbplay {
@@ -788,4 +790,7 @@ INDEX_TEMPLATE_ARGUMENTS
 void BPLUSTREE::UpdateRootPageId(int insert_record) {}
 
 template class BPlusTree<key_t, value_t>;
+// Phase 2: the tree as a pure index — EncodedKey keys, RID values pointing into
+// the TupleStore. Internal pages use page_id_t child pointers (see BPlusTree.h).
+template class BPlusTree<EncodedKey, RID>;
 }  // namespace dbplay

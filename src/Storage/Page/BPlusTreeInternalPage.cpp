@@ -14,6 +14,7 @@
 #include <iostream>
 #include <sstream>
 
+#include "Common/EncodedKey.h"
 #include "Common/Utils.h"
 
 namespace dbplay {
@@ -371,4 +372,7 @@ void B_PLUS_TREE_INTERNAL_PAGE::CopyFirstFrom(const MappingType &pair,
 
 // ValueType for internal_node should be page_id_t.
 template class BPlusTreeInternalPage<key_t, value_t>;
+// Phase 2: internal node keyed by the order-preserving EncodedKey; child
+// pointers remain page_id_t.
+template class BPlusTreeInternalPage<EncodedKey, page_id_t>;
 }  // namespace dbplay
