@@ -30,9 +30,11 @@ void DiskManager::WritePage(page_id_t page_id, char *page_data) {
   size_t offset = static_cast<size_t>(page_id) * PAGE_SIZE;
   db_io_.seekp(offset);
   db_io_.write(page_data, PAGE_SIZE);
-
-  /// Flush to disk SYNC
-  db_io_.flush();
+  // No per-write flush: it forced a synchronous disk write on every eviction,
+  // which dominated runtime under buffer-pool pressure. Correctness across
+  // evict/reload is preserved because ReadPage repositions the stream (seek)
+  // before reading, which flushes the pending write. FlushAllPages() still
+  // syncs everything (e.g. on close).
 }
 
 int DiskManager::GetFileSize() const {
