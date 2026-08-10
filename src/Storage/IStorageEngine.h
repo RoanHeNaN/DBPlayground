@@ -35,6 +35,10 @@ class IStorageEngine {
 
   // Remove `key`. Returns true if a key was removed.
   virtual bool Remove(const Slice &key) = 0;
+
+  // Persist any catalog state and flush cached pages to disk, so the database
+  // can be reopened. Call before dropping the engine.
+  virtual void Flush() = 0;
 };
 
 }  // namespace dbplay

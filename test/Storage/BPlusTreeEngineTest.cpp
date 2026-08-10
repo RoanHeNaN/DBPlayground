@@ -20,6 +20,7 @@ namespace {
 constexpr char kTestDb[] = "engine_test.db";
 
 std::shared_ptr<BufferPoolManager> MakeBpm() {
+  remove(kTestDb);  // start from a clean file
   auto disk_manager = std::make_shared<DiskManager>(kTestDb);
   return std::make_shared<BufferPoolManager>(100, disk_manager);
 }
@@ -27,7 +28,7 @@ std::shared_ptr<BufferPoolManager> MakeBpm() {
 
 TEST(BPlusTreeEngineTest, TypedKeyValueRoundTrip) {
   auto bpm = MakeBpm();
-  BPlusTreeEngine engine(bpm);
+  BPlusTreeEngine engine(bpm, /*is_new=*/true);
 
   for (int64_t k = -50; k < 50; ++k) {
     ASSERT_TRUE(engine.Insert(encode_key<int64_t>(k), encode_value<int32_t>(static_cast<int32_t>(k * 3)))) << "k=" << k;
@@ -43,7 +44,7 @@ TEST(BPlusTreeEngineTest, TypedKeyValueRoundTrip) {
 
 TEST(BPlusTreeEngineTest, VariableLengthStringValues) {
   auto bpm = MakeBpm();
-  BPlusTreeEngine engine(bpm);
+  BPlusTreeEngine engine(bpm, /*is_new=*/true);
 
   ASSERT_TRUE(engine.Insert(encode_key<int64_t>(1), Slice("hello")));
   ASSERT_TRUE(engine.Insert(encode_key<int64_t>(2), Slice("a considerably longer opaque value with bytes")));
@@ -63,7 +64,7 @@ TEST(BPlusTreeEngineTest, VariableLengthStringValues) {
 
 TEST(BPlusTreeEngineTest, InsertIsAbsentOnly) {
   auto bpm = MakeBpm();
-  BPlusTreeEngine engine(bpm);
+  BPlusTreeEngine engine(bpm, /*is_new=*/true);
 
   ASSERT_TRUE(engine.Insert(encode_key<int64_t>(5), encode_value<int32_t>(1)));
   EXPECT_FALSE(engine.Insert(encode_key<int64_t>(5), encode_value<int32_t>(2)));  // no overwrite
@@ -77,7 +78,7 @@ TEST(BPlusTreeEngineTest, InsertIsAbsentOnly) {
 
 TEST(BPlusTreeEngineTest, RemoveThenMiss) {
   auto bpm = MakeBpm();
-  BPlusTreeEngine engine(bpm);
+  BPlusTreeEngine engine(bpm, /*is_new=*/true);
 
   ASSERT_TRUE(engine.Insert(encode_key<int64_t>(9), Slice("gone")));
   std::string out;
@@ -90,7 +91,7 @@ TEST(BPlusTreeEngineTest, RemoveThenMiss) {
 
 TEST(BPlusTreeEngineTest, RejectsWrongSizedKey) {
   auto bpm = MakeBpm();
-  BPlusTreeEngine engine(bpm);
+  BPlusTreeEngine engine(bpm, /*is_new=*/true);
   EXPECT_THROW(engine.Insert(Slice("short"), Slice("v")), std::invalid_argument);
   remove(kTestDb);
 }

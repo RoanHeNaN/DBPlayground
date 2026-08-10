@@ -13,8 +13,8 @@
 
 namespace dbplay {
 BPlusTree::BPlusTree(std::shared_ptr<BufferPoolManager> buffer_pool_manager, size_t leaf_max_size,
-                     size_t internal_max_size)
-    : root_page_id_(INVALID_PAGE_ID),
+                     size_t internal_max_size, page_id_t root_page_id)
+    : root_page_id_(root_page_id),
       buffer_pool_manager_(buffer_pool_manager),
       leaf_max_size_(leaf_max_size),
       internal_max_size_(internal_max_size) {}

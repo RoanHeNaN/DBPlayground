@@ -50,10 +50,16 @@ class BPlusTree {
 
  public:
   explicit BPlusTree(std::shared_ptr<BufferPoolManager> buffer_pool_manager, size_t leaf_max_size = LEAF_PAGE_SIZE,
-                     size_t internal_max_size = INTERNAL_PAGE_SIZE);
+                     size_t internal_max_size = INTERNAL_PAGE_SIZE, page_id_t root_page_id = INVALID_PAGE_ID);
 
   // Returns true if this B+ tree has no keys and values.
   bool IsEmpty() const;
+
+  // Current root page id, so a catalog can persist it (INVALID_PAGE_ID = empty).
+  page_id_t GetRootPageId() const { return root_page_id_; }
+
+  // Restore the root when reopening a persisted tree (call before first use).
+  void SetRootPageId(page_id_t root_page_id) { root_page_id_ = root_page_id; }
 
   // Insert a key-value pair into this B+ tree.
   bool Insert(const EncodedKey &key, const RID &value, Transaction *transaction = nullptr);
