@@ -61,6 +61,10 @@ class BPlusTree {
   // Restore the root when reopening a persisted tree (call before first use).
   void SetRootPageId(page_id_t root_page_id) { root_page_id_ = root_page_id; }
 
+  // Page id of the leftmost leaf (start of an ordered scan), or
+  // INVALID_PAGE_ID if the tree is empty. Leaves are chained via NextPageId.
+  page_id_t FirstLeafPageId();
+
   // Insert a key-value pair into this B+ tree.
   bool Insert(const EncodedKey &key, const RID &value, Transaction *transaction = nullptr);
 

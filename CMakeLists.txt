@@ -46,6 +46,10 @@ target_link_libraries(dbplayground PRIVATE dbplayground_lib)
 
 message(STATUS "DBPlayground build tests: ${DBPLAYGROUND_BUILD_TESTS}")
 if(DBPLAYGROUND_BUILD_TESTS)
+    # Suppress CTest's built-in `test` target (which only runs ctest without
+    # building) so test/CMakeLists.txt can define its own `test` target that
+    # builds every test first and then runs the whole suite.
+    set(CMAKE_SKIP_TEST_TARGET ON)
     enable_testing()
     include(CTest)
     add_subdirectory(test)

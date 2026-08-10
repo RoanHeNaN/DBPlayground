@@ -45,6 +45,7 @@ class BPlusTreeEngine : public IStorageEngine {
   bool Get(const Slice &key, std::string *value) override;
   bool Remove(const Slice &key) override;
   void Flush() override;
+  std::unique_ptr<IKvCursor> NewCursor() override;
 
   Type key_type() const { return key_type_; }
   Type value_type() const { return value_type_; }

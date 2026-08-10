@@ -15,9 +15,11 @@
 #ifndef DBPLAYGROUND_ISTORAGEENGINE_H
 #define DBPLAYGROUND_ISTORAGEENGINE_H
 
+#include <memory>
 #include <string>
 
 #include "Common/Slice.h"
+#include "Storage/IKvCursor.h"
 
 namespace dbplay {
 
@@ -39,6 +41,9 @@ class IStorageEngine {
   // Persist any catalog state and flush cached pages to disk, so the database
   // can be reopened. Call before dropping the engine.
   virtual void Flush() = 0;
+
+  // Ordered forward scan over the whole key space (ascending encoded-key order).
+  virtual std::unique_ptr<IKvCursor> NewCursor() = 0;
 };
 
 }  // namespace dbplay

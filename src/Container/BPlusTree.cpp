@@ -768,4 +768,25 @@ std::shared_ptr<Page> BPlusTree::FindLeafPage(const EncodedKey &key, bool left_m
 
 void BPlusTree::UpdateRootPageId(int insert_record) {}
 
+// Descend from the root taking the leftmost child until a leaf is reached.
+// Read-only, no latching (used for ordered scans, like FindLeafPage).
+page_id_t BPlusTree::FirstLeafPageId() {
+  if (root_page_id_ == INVALID_PAGE_ID) {
+    return INVALID_PAGE_ID;
+  }
+  page_id_t cur = root_page_id_;
+  while (true) {
+    auto page = buffer_pool_manager_->FetchPage(cur);
+    auto *node = reinterpret_cast<BPlusTreePage *>(page->GetData());
+    if (node->IsLeafPage()) {
+      buffer_pool_manager_->UnpinPage(cur, false);
+      return cur;
+    }
+    auto *internal = reinterpret_cast<InternalPage *>(node);
+    page_id_t child = internal->ValueAt(0);
+    buffer_pool_manager_->UnpinPage(cur, false);
+    cur = child;
+  }
+}
+
 }  // namespace dbplay
