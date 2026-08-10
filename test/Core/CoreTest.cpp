@@ -8,6 +8,8 @@
 #include <vector>
 
 #include "Common/Config.h"
+#include "Common/EncodedKey.h"
+#include "Common/RID.h"
 #include "Container/BPlusTree.h"
 #include "Storage/BufferPool/BufferPoolManager.h"
 #include "Storage/Disk/DiskManager.h"
@@ -17,7 +19,14 @@
 namespace dbplay {
 
 constexpr size_t NUM_TRIES = 1;
-const constexpr size_t BUFFER_POOL_SLOT_NUM = 128000;
+// 20K keys at the default fanout need only tens of pages; this is generous
+// headroom and keeps the test off the eviction path (was 128000 -> ~2GB).
+const constexpr size_t BUFFER_POOL_SLOT_NUM = 1024;
+
+// Deterministic RID for a logical key, so inserts and reads agree.
+static RID RidOf(key_t k) {
+  return RID(static_cast<page_id_t>(k & 0xFFFFFFFF), static_cast<uint32_t>(k & 0xFFFFFFFF));
+}
 
 template <typename... Args>
 void LaunchParallelTest(std::vector<std::thread> &threads, uint32_t num_threads, Args &&...args) {
@@ -34,19 +43,18 @@ void WaitThreadsFinished(std::vector<std::thread> &threads) {
   }
 }
 
-void InsertHelper(std::shared_ptr<BPlusTree<key_t, value_t>> tree, const std::vector<key_t> keys, uint64_t tid) {
+void InsertHelper(std::shared_ptr<BPlusTree> tree, const std::vector<key_t> keys, uint64_t tid) {
   Transaction *transaction = new Transaction(tid);
   for (const auto &key : keys) {
-    value_t value = key & 0xFFFFFFFF;
-    tree->Insert(key, value, transaction);
+    tree->Insert(MakeEncodedKey<int64_t>(key), RidOf(key), transaction);
   }
   delete transaction;
 }
 
-void DeleteHelper(std::shared_ptr<BPlusTree<key_t, value_t>> tree, const std::vector<key_t> keys, uint64_t tid) {
+void DeleteHelper(std::shared_ptr<BPlusTree> tree, const std::vector<key_t> keys, uint64_t tid) {
   Transaction *transaction = new Transaction(tid);
   for (const auto &key : keys) {
-    tree->Remove(key, transaction);
+    tree->Remove(MakeEncodedKey<int64_t>(key), transaction);
   }
   delete transaction;
 }
@@ -55,7 +63,7 @@ TEST(CoreTest, ConcurrentInsert) {
   for (size_t iter = 0; iter < NUM_TRIES; ++iter) {
     auto disk_manager = std::make_shared<DiskManager>("test.db");
     auto buffer_pool_manager = std::make_shared<BufferPoolManager>(BUFFER_POOL_SLOT_NUM, disk_manager);
-    auto container = std::make_shared<BPlusTree<key_t, value_t>>(buffer_pool_manager);
+    auto container = std::make_shared<BPlusTree>(buffer_pool_manager);
 
     std::vector<key_t> keys;
     constexpr size_t NUM_KEYS = 20000;  // 20 K
@@ -81,9 +89,9 @@ TEST(CoreTest, ConcurrentInsert) {
 
     for (size_t iter = 0; iter < NUM_KEYS; ++iter) {
       key_t key = keys[iter];
-      value_t value;
-      container->GetValue(key, value);
-      EXPECT_EQ((value_t)(key & 0xFFFFFFFF), value);
+      RID value;
+      container->GetValue(MakeEncodedKey<int64_t>(key), value);
+      EXPECT_EQ(RidOf(key), value);
     }
 
     remove("test.db");
@@ -94,7 +102,7 @@ TEST(CoreTest, DISABLED_ConcurrentRemove) {
   for (size_t iter = 0; iter < NUM_TRIES; ++iter) {
     auto disk_manager = std::make_shared<DiskManager>("test.db");
     auto buffer_pool_manager = std::make_shared<BufferPoolManager>(50, disk_manager);
-    auto container = std::make_shared<BPlusTree<key_t, value_t>>(buffer_pool_manager);
+    auto container = std::make_shared<BPlusTree>(buffer_pool_manager);
 
     std::vector<key_t> keys;
     constexpr size_t NUM_KEYS = 200;
@@ -122,13 +130,13 @@ TEST(CoreTest, DISABLED_ConcurrentRemove) {
 
     for (size_t iter = 0; iter < NUM_KEYS; ++iter) {
       key_t key = keys[iter];
-      value_t value;
-      bool found = container->GetValue(key, value);
+      RID value;
+      bool found = container->GetValue(MakeEncodedKey<int64_t>(key), value);
       if (iter < (NUM_PER_THREAD * NUM_THREADS))
         EXPECT_EQ(found, false);
       else {
         EXPECT_EQ(found, true);
-        EXPECT_EQ((value_t)(key & 0xFFFFFFFF), value);
+        EXPECT_EQ(RidOf(key), value);
       }
     }
 
@@ -140,7 +148,7 @@ TEST(CoreTest, DISABLED_ConcurrentRead) {
   for (size_t iter = 0; iter < NUM_TRIES; ++iter) {
     auto disk_manager = std::make_shared<DiskManager>("test.db");
     auto buffer_pool_manager = std::make_shared<BufferPoolManager>(50, disk_manager);
-    auto container = std::make_shared<BPlusTree<key_t, value_t>>(buffer_pool_manager);
+    auto container = std::make_shared<BPlusTree>(buffer_pool_manager);
 
     std::vector<key_t> keys;
     constexpr size_t NUM_KEYS = 200;
@@ -169,9 +177,9 @@ TEST(CoreTest, DISABLED_ConcurrentRead) {
     auto read_func = [&](uint32_t tid) {
       for (const auto &key : keys) {
         Transaction *transaction = new Transaction(tid);
-        value_t value;
-        container->GetValue(key, value, transaction);
-        EXPECT_EQ((value_t)(key & 0xFFFFFFFF), value);
+        RID value;
+        container->GetValue(MakeEncodedKey<int64_t>(key), value, transaction);
+        EXPECT_EQ(RidOf(key), value);
         delete transaction;
       }
     };

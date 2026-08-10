@@ -20,7 +20,6 @@ namespace dbplay {
 
 enum class IndexPageType { InvalidIndexPage = 0, LeafPage, InternalPage };
 
-#define INDEX_TEMPLATE_ARGUMENTS template <typename KeyType, typename ValueType>
 
 /**
  * Both internal and leaf page are inherited from this page.

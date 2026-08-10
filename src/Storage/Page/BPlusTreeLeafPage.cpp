@@ -31,8 +31,7 @@ namespace dbplay {
  * Including set page type, set current size to zero, set page id/parent id, set
  * next page id and set max size
  */
-INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_LEAF_PAGE::Init(page_id_t page_id, page_id_t parent_id, int max_size) {
+void BPlusTreeLeafPage::Init(page_id_t page_id, page_id_t parent_id, int max_size) {
   // Default values:
   // parent_id = INVALID_PAGE_ID;
   // max_size = LEAF_PAGE_SIZE.
@@ -48,20 +47,17 @@ void B_PLUS_TREE_LEAF_PAGE::Init(page_id_t page_id, page_id_t parent_id, int max
 /**
  * Helper methods to set/get next page id
  */
-INDEX_TEMPLATE_ARGUMENTS
-page_id_t B_PLUS_TREE_LEAF_PAGE::GetNextPageId() const { return next_page_id_; }
+page_id_t BPlusTreeLeafPage::GetNextPageId() const { return next_page_id_; }
 
-INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_LEAF_PAGE::SetNextPageId(page_id_t next_page_id) { next_page_id_ = next_page_id; }
+void BPlusTreeLeafPage::SetNextPageId(page_id_t next_page_id) { next_page_id_ = next_page_id; }
 
 /**
  * Helper method to find the first index i so that array_[i].first >= key
  * NOTE: This method is only used when generating index iterator
  */
-INDEX_TEMPLATE_ARGUMENTS
-int B_PLUS_TREE_LEAF_PAGE::KeyIndex(const KeyType &key) const {
+int BPlusTreeLeafPage::KeyIndex(const EncodedKey &key) const {
   const MappingType *p = std::lower_bound(array_, array_ + GetSize(), key,
-                                          [&](const MappingType &item, const KeyType &k) { return item.first < k; });
+                                          [&](const MappingType &item, const EncodedKey &k) { return item.first < k; });
 
   return std::distance(array_, p);
 }
@@ -70,15 +66,13 @@ int B_PLUS_TREE_LEAF_PAGE::KeyIndex(const KeyType &key) const {
  * Helper method to find and return the key associated with input "index"(a.k.a
  * array_ offset)
  */
-INDEX_TEMPLATE_ARGUMENTS
-KeyType B_PLUS_TREE_LEAF_PAGE::KeyAt(int index) const { return array_[index].first; }
+EncodedKey BPlusTreeLeafPage::KeyAt(int index) const { return array_[index].first; }
 
 /*
  * Helper method to find and return the key & value pair associated with input
  * "index"(a.k.a array_ offset)
  */
-INDEX_TEMPLATE_ARGUMENTS
-auto B_PLUS_TREE_LEAF_PAGE::GetItem(int index) -> const MappingType & { return array_[index]; }
+auto BPlusTreeLeafPage::GetItem(int index) -> const MappingType & { return array_[index]; }
 
 //*****************************************************************************
 //* INSERTION
@@ -88,8 +82,7 @@ auto B_PLUS_TREE_LEAF_PAGE::GetItem(int index) -> const MappingType & { return a
  * Insert key & value pair into leaf page ordered by key
  * @return  page size after insertion
  */
-INDEX_TEMPLATE_ARGUMENTS
-int B_PLUS_TREE_LEAF_PAGE::Insert(const KeyType &key, const ValueType &value) {
+int BPlusTreeLeafPage::Insert(const EncodedKey &key, const RID &value) {
   /* find insert position [binary search] */
   int insert_position = KeyIndex(key);
 
@@ -114,8 +107,7 @@ int B_PLUS_TREE_LEAF_PAGE::Insert(const KeyType &key, const ValueType &value) {
 /**
  * Remove half of key & value pairs from this page to "recipient" page
  */
-INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_LEAF_PAGE::MoveHalfTo(BPlusTreeLeafPage *recipient) {
+void BPlusTreeLeafPage::MoveHalfTo(BPlusTreeLeafPage *recipient) {
   // Currently, this is only called when recipient is empty (in Split)
 
   // Move array_[(size+1)/2 : size-1].
@@ -133,8 +125,7 @@ void B_PLUS_TREE_LEAF_PAGE::MoveHalfTo(BPlusTreeLeafPage *recipient) {
  * Copy starting from items, and copy {size} number of elements into me.
  * [Attention] The caller should update size. This function doesn't.
  */
-INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_LEAF_PAGE::CopyNFrom(MappingType *items, int size) {
+void BPlusTreeLeafPage::CopyNFrom(MappingType *items, int size) {
   if (GetSize() + size > GetMaxSize()) {
     throw std::runtime_error("CopyNFrom: will overflow page");
   }
@@ -154,8 +145,7 @@ void B_PLUS_TREE_LEAF_PAGE::CopyNFrom(MappingType *items, int size) {
  * does, then store its corresponding value in input "value" and return true.
  * If the key does not exist, then return false
  */
-INDEX_TEMPLATE_ARGUMENTS
-bool B_PLUS_TREE_LEAF_PAGE::Lookup(const KeyType &key, ValueType *value) const {
+bool BPlusTreeLeafPage::Lookup(const EncodedKey &key, RID *value) const {
   /* Linear search */
   // for (int i = 0; i < GetSize(); i++) {
   //   if (comparator(array_[i].first, key) == 0) {
@@ -187,8 +177,7 @@ bool B_PLUS_TREE_LEAF_PAGE::Lookup(const KeyType &key, ValueType *value) const {
  * NOTE: store key&value pair continuously after deletion
  * @return   page size after deletion
  */
-INDEX_TEMPLATE_ARGUMENTS
-int B_PLUS_TREE_LEAF_PAGE::RemoveAndDeleteRecord(const KeyType &key) {
+int BPlusTreeLeafPage::RemoveAndDeleteRecord(const EncodedKey &key) {
   /* Binary search */
   int pos = KeyIndex(key);
   if (pos < GetSize() && (array_[pos].first == key)) {
@@ -210,8 +199,7 @@ int B_PLUS_TREE_LEAF_PAGE::RemoveAndDeleteRecord(const KeyType &key) {
  *
  * This function updates the size of two nodes.
  */
-INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_LEAF_PAGE::MoveAllTo(BPlusTreeLeafPage *recipient) {
+void BPlusTreeLeafPage::MoveAllTo(BPlusTreeLeafPage *recipient) {
   // Assume we are moving to the left sibling
   // If we are moving to the right sibling (recipient), we need to update the left sibling
   int sz = GetSize();
@@ -230,8 +218,7 @@ void B_PLUS_TREE_LEAF_PAGE::MoveAllTo(BPlusTreeLeafPage *recipient) {
  * Remove the first key & value pair from this page to "recipient" page.
  * This function updates the size for both nodes.
  */
-INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_LEAF_PAGE::MoveFirstToEndOf(BPlusTreeLeafPage *recipient) {
+void BPlusTreeLeafPage::MoveFirstToEndOf(BPlusTreeLeafPage *recipient) {
   // Copy element to recipient's last position
   recipient->CopyLastFrom(array_[0]);
 
@@ -249,8 +236,7 @@ void B_PLUS_TREE_LEAF_PAGE::MoveFirstToEndOf(BPlusTreeLeafPage *recipient) {
  * Remove the last key & value pair from this page to "recipient" page.
  * This function updates the size for both nodes.
  */
-INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_LEAF_PAGE::MoveLastToFrontOf(BPlusTreeLeafPage *recipient) {
+void BPlusTreeLeafPage::MoveLastToFrontOf(BPlusTreeLeafPage *recipient) {
   // Copy element to recipient's front position
   recipient->CopyFirstFrom(array_[GetSize() - 1]);
 
@@ -265,15 +251,13 @@ void B_PLUS_TREE_LEAF_PAGE::MoveLastToFrontOf(BPlusTreeLeafPage *recipient) {
  * Copy the item into the end of my item list. (Append item to my array_)
  * [Attention] This function doesn't update size.
  */
-INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_LEAF_PAGE::CopyLastFrom(const MappingType &item) { array_[GetSize()] = item; }
+void BPlusTreeLeafPage::CopyLastFrom(const MappingType &item) { array_[GetSize()] = item; }
 
 /*
  * Insert item at the front of my items. Move items accordingly.
  * [Attention] this function doesn't update size.
  */
-INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_LEAF_PAGE::CopyFirstFrom(const MappingType &item) {
+void BPlusTreeLeafPage::CopyFirstFrom(const MappingType &item) {
   // make space
   for (int i = GetSize() - 1; i >= 0; i--) {
     array_[i + 1] = array_[i];
@@ -283,7 +267,5 @@ void B_PLUS_TREE_LEAF_PAGE::CopyFirstFrom(const MappingType &item) {
   array_[0] = item;
 }
 
-template class BPlusTreeLeafPage<key_t, value_t>;
 // Phase 2: leaf stores (order-preserving key, RID into the TupleStore).
-template class BPlusTreeLeafPage<EncodedKey, RID>;
 }  // namespace dbplay

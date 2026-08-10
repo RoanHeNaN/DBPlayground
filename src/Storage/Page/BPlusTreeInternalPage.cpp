@@ -26,8 +26,7 @@ namespace dbplay {
  * Including set page type, set current size, set page id, set parent id and set
  * max page size
  */
-INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_INTERNAL_PAGE::Init(page_id_t page_id, page_id_t parent_id, int max_size) {
+void BPlusTreeInternalPage::Init(page_id_t page_id, page_id_t parent_id, int max_size) {
   SetPageType(IndexPageType::InternalPage);
   SetSize(0);
   SetMaxSize(max_size);
@@ -39,11 +38,9 @@ void B_PLUS_TREE_INTERNAL_PAGE::Init(page_id_t page_id, page_id_t parent_id, int
  * Helper method to get/set the key associated with input "index"(a.k.a
  * array_ offset)
  */
-INDEX_TEMPLATE_ARGUMENTS
-KeyType B_PLUS_TREE_INTERNAL_PAGE::KeyAt(int index) const { return array_[index].first; }
+EncodedKey BPlusTreeInternalPage::KeyAt(int index) const { return array_[index].first; }
 
-INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_INTERNAL_PAGE::SetKeyAt(int index, const KeyType &key) {
+void BPlusTreeInternalPage::SetKeyAt(int index, const EncodedKey &key) {
   if (index < 0) {
     std::cout << "internal_page SetKeyAt: negative index: " << index << std::endl;
   } else if (index == 0) {
@@ -57,8 +54,7 @@ void B_PLUS_TREE_INTERNAL_PAGE::SetKeyAt(int index, const KeyType &key) {
  * Helper method to find and return array_ index(or offset), so that its value
  * equals to input "value"
  */
-INDEX_TEMPLATE_ARGUMENTS
-int B_PLUS_TREE_INTERNAL_PAGE::ValueIndex(const ValueType &value) const {
+int BPlusTreeInternalPage::ValueIndex(const page_id_t &value) const {
   for (int i = 0; i < GetSize(); i++) {
     // We are comparing values here, of type page_id_t. So we just use ==.
     // KeyComparator is used for comparing keys.
@@ -75,8 +71,7 @@ int B_PLUS_TREE_INTERNAL_PAGE::ValueIndex(const ValueType &value) const {
  * Helper method to get the value associated with input "index"(a.k.a array_
  * offset)
  */
-INDEX_TEMPLATE_ARGUMENTS
-ValueType B_PLUS_TREE_INTERNAL_PAGE::ValueAt(int index) const { return array_[index].second; }
+page_id_t BPlusTreeInternalPage::ValueAt(int index) const { return array_[index].second; }
 
 //*****************************************************************************
 //* LOOKUP
@@ -87,10 +82,9 @@ ValueType B_PLUS_TREE_INTERNAL_PAGE::ValueAt(int index) const { return array_[in
  * that contains input "key"
  * Start the search from the second key(the first key should always be invalid)
  */
-INDEX_TEMPLATE_ARGUMENTS
-ValueType B_PLUS_TREE_INTERNAL_PAGE::Lookup(const KeyType &key) const {
+page_id_t BPlusTreeInternalPage::Lookup(const EncodedKey &key) const {
   for (int i = 1; i < GetSize(); i++) {
-    KeyType k = array_[i].first;
+    EncodedKey k = array_[i].first;
     if (key < k) {
       return array_[i - 1].second;
     }
@@ -107,9 +101,8 @@ ValueType B_PLUS_TREE_INTERNAL_PAGE::Lookup(const KeyType &key) const {
  * page, you should create a new root page and populate its elements.
  * NOTE: This method is only called within InsertIntoParent()(b_plus_tree.cpp)
  */
-INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_INTERNAL_PAGE::PopulateNewRoot(const ValueType &old_value, const KeyType &new_key,
-                                                const ValueType &new_value) {
+void BPlusTreeInternalPage::PopulateNewRoot(const page_id_t &old_value, const EncodedKey &new_key,
+                                                const page_id_t &new_value) {
   // This is called when a new root page is created. It only contains one key, two values.
   SetKeyAt(1, new_key);
   if (old_value <= new_value) {
@@ -127,9 +120,8 @@ void B_PLUS_TREE_INTERNAL_PAGE::PopulateNewRoot(const ValueType &old_value, cons
  * old_value
  * @return:  new size after insertion
  */
-INDEX_TEMPLATE_ARGUMENTS
-int B_PLUS_TREE_INTERNAL_PAGE::InsertNodeAfter(const ValueType &old_value, const KeyType &new_key,
-                                               const ValueType &new_value) {
+int BPlusTreeInternalPage::InsertNodeAfter(const page_id_t &old_value, const EncodedKey &new_key,
+                                               const page_id_t &new_value) {
   int value_index = ValueIndex(old_value);
   if (value_index == -1) {
     LOG(WARNING) << "Could no find value " << old_value << " current node size " << GetSize();
@@ -172,8 +164,7 @@ void UpdateParentPageId(page_id_t page_id, page_id_t parent_page_id,
  * Remove half of key & value pairs from this page to "recipient" page.
  * The suffix is moved.
  */
-INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_INTERNAL_PAGE::MoveHalfTo(BPlusTreeInternalPage *recipient,
+void BPlusTreeInternalPage::MoveHalfTo(BPlusTreeInternalPage *recipient,
                                            std::shared_ptr<BufferPoolManager> buffer_pool_manager) {
   // Move array_[(size+1)/2 : size-1]
   // Number of elements moved: size-1 - (size+1)/2 + 1 = size-(size+1)/2 = size-ceil(size/2) = floor(size/2)
@@ -192,8 +183,7 @@ void B_PLUS_TREE_INTERNAL_PAGE::MoveHalfTo(BPlusTreeInternalPage *recipient,
  *
  * The caller should update the size. This function doesn't.
  */
-INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_INTERNAL_PAGE::CopyNFrom(MappingType *items, int size,
+void BPlusTreeInternalPage::CopyNFrom(MappingType *items, int size,
                                           std::shared_ptr<BufferPoolManager> buffer_pool_manager) {
   int old_size = GetSize();
   for (int i = old_size; i < size; i++) {
@@ -214,8 +204,7 @@ void B_PLUS_TREE_INTERNAL_PAGE::CopyNFrom(MappingType *items, int size,
  * array_ offset)
  * NOTE: store key&value pair continuously after deletion
  */
-INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_INTERNAL_PAGE::Remove(int index) {
+void BPlusTreeInternalPage::Remove(int index) {
   for (int i = index + 1; i < GetSize(); i++) {
     array_[i - 1] = array_[i];
   }
@@ -227,8 +216,7 @@ void B_PLUS_TREE_INTERNAL_PAGE::Remove(int index) {
  * Remove the only key & value pair in internal page and return the value
  * NOTE: only call this method within AdjustRoot()(in b_plus_tree.cpp)
  */
-INDEX_TEMPLATE_ARGUMENTS
-ValueType B_PLUS_TREE_INTERNAL_PAGE::RemoveAndReturnOnlyChild() {
+page_id_t BPlusTreeInternalPage::RemoveAndReturnOnlyChild() {
   if (GetSize() != 1) {
     std::cout << "internal_page RemoveAndReturnOnlyChild called, size=" << GetSize() << std::endl;
   }
@@ -247,8 +235,7 @@ ValueType B_PLUS_TREE_INTERNAL_PAGE::RemoveAndReturnOnlyChild() {
  * You also need to use BufferPoolManager to persist changes to the parent page id for those
  * pages that are moved to the recipient
  */
-INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_INTERNAL_PAGE::MoveAllTo(BPlusTreeInternalPage *recipient, const KeyType &middle_key,
+void BPlusTreeInternalPage::MoveAllTo(BPlusTreeInternalPage *recipient, const EncodedKey &middle_key,
                                           std::shared_ptr<BufferPoolManager> buffer_pool_manager) {
   // Assume recipient is the left sibling
   // This is only called by Coalesce() in b_plus_tree.cpp
@@ -282,8 +269,7 @@ void B_PLUS_TREE_INTERNAL_PAGE::MoveAllTo(BPlusTreeInternalPage *recipient, cons
  * You also need to use BufferPoolManager to persist changes to the parent page id for those
  * pages that are moved to the recipient
  */
-INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_INTERNAL_PAGE::MoveFirstToEndOf(BPlusTreeInternalPage *recipient, const KeyType &middle_key,
+void BPlusTreeInternalPage::MoveFirstToEndOf(BPlusTreeInternalPage *recipient, const EncodedKey &middle_key,
                                                  std::shared_ptr<BufferPoolManager> buffer_pool_manager) {
   recipient->array_[recipient->GetSize()] = array_[0];
   recipient->array_[recipient->GetSize()].first = middle_key;
@@ -304,8 +290,7 @@ void B_PLUS_TREE_INTERNAL_PAGE::MoveFirstToEndOf(BPlusTreeInternalPage *recipien
  * Since it is an internal page, the moved entry(page)'s parent needs to be updated.
  * So I need to 'adopt' it by changing its parent page id, which needs to be persisted with BufferPoolManger
  */
-INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_INTERNAL_PAGE::CopyLastFrom(const MappingType &pair,
+void BPlusTreeInternalPage::CopyLastFrom(const MappingType &pair,
                                              std::shared_ptr<BufferPoolManager> buffer_pool_manager) {
   array_[GetSize()] = pair;
 
@@ -320,8 +305,7 @@ void B_PLUS_TREE_INTERNAL_PAGE::CopyLastFrom(const MappingType &pair,
  * the right place. You also need to use BufferPoolManager to persist changes to the parent page id for those pages that
  * are moved to the recipient
  */
-INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_INTERNAL_PAGE::MoveLastToFrontOf(BPlusTreeInternalPage *recipient, const KeyType &middle_key,
+void BPlusTreeInternalPage::MoveLastToFrontOf(BPlusTreeInternalPage *recipient, const EncodedKey &middle_key,
                                                   std::shared_ptr<BufferPoolManager> buffer_pool_manager) {
   // make room
   for (int i = recipient->GetSize() - 1; i >= 0; i--) {
@@ -349,8 +333,7 @@ void B_PLUS_TREE_INTERNAL_PAGE::MoveLastToFrontOf(BPlusTreeInternalPage *recipie
  * Since it is an internal page, the moved entry(page)'s parent needs to be updated.
  * So I need to 'adopt' it by changing its parent page id, which needs to be persisted with BufferPoolManger
  */
-INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_INTERNAL_PAGE::CopyFirstFrom(const MappingType &pair,
+void BPlusTreeInternalPage::CopyFirstFrom(const MappingType &pair,
                                               std::shared_ptr<BufferPoolManager> buffer_pool_manager) {
   // make room
   for (int i = GetSize() - 1; i >= 0; i--) {
@@ -370,9 +353,7 @@ void B_PLUS_TREE_INTERNAL_PAGE::CopyFirstFrom(const MappingType &pair,
   IncreaseSize(1);
 }
 
-// ValueType for internal_node should be page_id_t.
-template class BPlusTreeInternalPage<key_t, value_t>;
+// page_id_t for internal_node should be page_id_t.
 // Phase 2: internal node keyed by the order-preserving EncodedKey; child
 // pointers remain page_id_t.
-template class BPlusTreeInternalPage<EncodedKey, page_id_t>;
 }  // namespace dbplay

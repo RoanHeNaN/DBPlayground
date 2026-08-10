@@ -20,6 +20,8 @@
 #include <string>
 
 #include "Common/Config.h"
+#include "Common/EncodedKey.h"
+#include "Common/RID.h"
 #include "Concurrency/Transaction.h"
 #include "Storage/BufferPool/BufferPoolManager.h"
 #include "Storage/Page/BPlusTreeInternalPage.h"
@@ -28,7 +30,6 @@
 
 namespace dbplay {
 
-#define BPLUSTREE BPlusTree<KeyType, ValueType>
 
 /**
  * Main class providing the API for the Interactive B+ Tree.
@@ -40,11 +41,10 @@ namespace dbplay {
  * (3) The structure should shrink and grow dynamically
  * (4) Implement index iterator for range scan
  */
-INDEX_TEMPLATE_ARGUMENTS
 class BPlusTree {
-  using MappingType = std::pair<KeyType, ValueType>;
-  using InternalPage = BPlusTreeInternalPage<KeyType, page_id_t>;
-  using LeafPage = BPlusTreeLeafPage<KeyType, ValueType>;
+  using MappingType = std::pair<EncodedKey, RID>;
+  using InternalPage = BPlusTreeInternalPage;
+  using LeafPage = BPlusTreeLeafPage;
 
   enum class OpType { Read, Insert, Remove };
 
@@ -56,13 +56,13 @@ class BPlusTree {
   bool IsEmpty() const;
 
   // Insert a key-value pair into this B+ tree.
-  bool Insert(const KeyType &key, const ValueType &value, Transaction *transaction = nullptr);
+  bool Insert(const EncodedKey &key, const RID &value, Transaction *transaction = nullptr);
 
   // Remove a key and its value from this B+ tree.
-  void Remove(const KeyType &key, Transaction *transaction = nullptr);
+  void Remove(const EncodedKey &key, Transaction *transaction = nullptr);
 
   // return the value associated with a given key
-  bool GetValue(const KeyType &key, ValueType &value, Transaction *transaction = nullptr);
+  bool GetValue(const EncodedKey &key, RID &value, Transaction *transaction = nullptr);
 
   //        void Draw(std::shared_ptr<BufferPoolManager> bpm, const std::string &outf) {
   //            std::ofstream out(outf);
@@ -83,23 +83,23 @@ class BPlusTree {
 
  private:
   // expose for test purpose
-  std::shared_ptr<Page> FindLeafPage(const KeyType &key, bool left_most = false);
+  std::shared_ptr<Page> FindLeafPage(const EncodedKey &key, bool left_most = false);
 
-  void StartNewTree(const KeyType &key, const ValueType &value);
+  void StartNewTree(const EncodedKey &key, const RID &value);
 
-  bool InsertIntoLeaf(const KeyType &key, const ValueType &value, Transaction *transaction = nullptr);
+  bool InsertIntoLeaf(const EncodedKey &key, const RID &value, Transaction *transaction = nullptr);
 
-  void InsertIntoParent(BPlusTreePage *old_node, const KeyType &key, BPlusTreePage *new_node,
+  void InsertIntoParent(BPlusTreePage *old_node, const EncodedKey &key, BPlusTreePage *new_node,
                         Transaction *transaction = nullptr);
 
   template <typename N>
   N *Split(N *node);
 
   template <typename N>
-  bool CoalesceOrRedistribute(N *node, Transaction *txn, const KeyType &key);
+  bool CoalesceOrRedistribute(N *node, Transaction *txn, const EncodedKey &key);
 
   template <typename N>
-  bool Coalesce(N **neighbor_node, N **node, BPlusTreeInternalPage<KeyType, page_id_t> **parent, int index,
+  bool Coalesce(N **neighbor_node, N **node, BPlusTreeInternalPage **parent, int index,
                 Transaction *transaction = nullptr);
 
   template <typename N>
@@ -117,7 +117,7 @@ class BPlusTree {
   //        void SafeToString(BPlusTreePage *page, std::shared_ptr<BufferPoolManager> bpm) const;
 
   // Similar to FindLeafPage, but with concurrency control
-  std::shared_ptr<Page> FindLeafPageRW(const KeyType &key, bool left_most, enum OpType op, Transaction *transaction);
+  std::shared_ptr<Page> FindLeafPageRW(const EncodedKey &key, bool left_most, enum OpType op, Transaction *transaction);
 
   template <typename N>
   bool FitOne(N *node1, N *node2);

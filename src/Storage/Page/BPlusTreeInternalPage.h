@@ -12,11 +12,11 @@
 
 #include <queue>
 
+#include "Common/EncodedKey.h"
 #include "Storage/Page/BPlusTreePage.h"
 
 namespace dbplay {
 
-#define B_PLUS_TREE_INTERNAL_PAGE BPlusTreeInternalPage<KeyType, ValueType>
 #define INTERNAL_PAGE_HEADER_SIZE 24
 #define INTERNAL_PAGE_SIZE ((PAGE_SIZE - INTERNAL_PAGE_HEADER_SIZE) / (sizeof(MappingType)) - 1)
 /**
@@ -32,32 +32,31 @@ namespace dbplay {
  * | HEADER | KEY(1)+PAGE_ID(1) | KEY(2)+PAGE_ID(2) | ... | KEY(n)+PAGE_ID(n) |
  *  --------------------------------------------------------------------------
  */
-INDEX_TEMPLATE_ARGUMENTS
 class BPlusTreeInternalPage : public BPlusTreePage {
  public:
-  using MappingType = std::pair<KeyType, ValueType>;
+  using MappingType = std::pair<EncodedKey, page_id_t>;
 
   // must call initialize method after "create" a new node
   void Init(page_id_t page_id, page_id_t parent_id = INVALID_PAGE_ID, int max_size = INTERNAL_PAGE_SIZE);
 
-  KeyType KeyAt(int index) const;
-  void SetKeyAt(int index, const KeyType &key);
-  int ValueIndex(const ValueType &value) const;
-  ValueType ValueAt(int index) const;
+  EncodedKey KeyAt(int index) const;
+  void SetKeyAt(int index, const EncodedKey &key);
+  int ValueIndex(const page_id_t &value) const;
+  page_id_t ValueAt(int index) const;
 
-  ValueType Lookup(const KeyType &key) const;
-  void PopulateNewRoot(const ValueType &old_value, const KeyType &new_key, const ValueType &new_value);
-  int InsertNodeAfter(const ValueType &old_value, const KeyType &new_key, const ValueType &new_value);
+  page_id_t Lookup(const EncodedKey &key) const;
+  void PopulateNewRoot(const page_id_t &old_value, const EncodedKey &new_key, const page_id_t &new_value);
+  int InsertNodeAfter(const page_id_t &old_value, const EncodedKey &new_key, const page_id_t &new_value);
   void Remove(int index);
-  ValueType RemoveAndReturnOnlyChild();
+  page_id_t RemoveAndReturnOnlyChild();
 
   // Split and Merge utility methods
-  void MoveAllTo(BPlusTreeInternalPage *recipient, const KeyType &middle_key,
+  void MoveAllTo(BPlusTreeInternalPage *recipient, const EncodedKey &middle_key,
                  std::shared_ptr<BufferPoolManager> buffer_pool_manager);
   void MoveHalfTo(BPlusTreeInternalPage *recipient, std::shared_ptr<BufferPoolManager> buffer_pool_manager);
-  void MoveFirstToEndOf(BPlusTreeInternalPage *recipient, const KeyType &middle_key,
+  void MoveFirstToEndOf(BPlusTreeInternalPage *recipient, const EncodedKey &middle_key,
                         std::shared_ptr<BufferPoolManager> buffer_pool_manager);
-  void MoveLastToFrontOf(BPlusTreeInternalPage *recipient, const KeyType &middle_key,
+  void MoveLastToFrontOf(BPlusTreeInternalPage *recipient, const EncodedKey &middle_key,
                          std::shared_ptr<BufferPoolManager> buffer_pool_manager);
 
  private:

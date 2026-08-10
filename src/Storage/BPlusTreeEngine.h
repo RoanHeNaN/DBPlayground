@@ -39,7 +39,7 @@ class BPlusTreeEngine : public IStorageEngine {
 
  private:
   std::shared_ptr<BufferPoolManager> buffer_pool_manager_;
-  BPlusTree<EncodedKey, RID> index_;  // EncodedKey -> RID
+  BPlusTree index_;  // EncodedKey -> RID
   TupleStore tuples_;                 // RID -> value bytes
 };
 

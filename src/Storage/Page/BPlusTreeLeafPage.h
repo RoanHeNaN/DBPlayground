@@ -14,11 +14,12 @@
 #include <utility>
 #include <vector>
 
+#include "Common/EncodedKey.h"
+#include "Common/RID.h"
 #include "Storage/Page/BPlusTreePage.h"
 
 namespace dbplay {
 
-#define B_PLUS_TREE_LEAF_PAGE BPlusTreeLeafPage<KeyType, ValueType>
 #define LEAF_PAGE_HEADER_SIZE 24
 #define LEAF_PAGE_SIZE ((PAGE_SIZE - LEAF_PAGE_HEADER_SIZE) / sizeof(MappingType))
 
@@ -40,10 +41,9 @@ namespace dbplay {
  * | ParentPageId (4) | PageId (4) | NextPageId (4) ｜
  *  -------------------------------------------------
  */
-INDEX_TEMPLATE_ARGUMENTS
 class BPlusTreeLeafPage : public BPlusTreePage {
  public:
-  using MappingType = std::pair<KeyType, ValueType>;
+  using MappingType = std::pair<EncodedKey, RID>;
 
   // After creating a new leaf page from buffer pool, must call initialize
   // method to set default values
@@ -51,14 +51,14 @@ class BPlusTreeLeafPage : public BPlusTreePage {
   // helper methods
   page_id_t GetNextPageId() const;
   void SetNextPageId(page_id_t next_page_id);
-  KeyType KeyAt(int index) const;
-  int KeyIndex(const KeyType &key) const;
+  EncodedKey KeyAt(int index) const;
+  int KeyIndex(const EncodedKey &key) const;
   const MappingType &GetItem(int index);
 
   // insert and delete methods
-  int Insert(const KeyType &key, const ValueType &value);
-  bool Lookup(const KeyType &key, ValueType *value) const;
-  int RemoveAndDeleteRecord(const KeyType &key);
+  int Insert(const EncodedKey &key, const RID &value);
+  bool Lookup(const EncodedKey &key, RID *value) const;
+  int RemoveAndDeleteRecord(const EncodedKey &key);
 
   // Split and Merge utility methods
   void MoveHalfTo(BPlusTreeLeafPage *recipient);

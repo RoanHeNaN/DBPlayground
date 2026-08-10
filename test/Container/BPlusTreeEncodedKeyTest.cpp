@@ -36,7 +36,7 @@ std::shared_ptr<BufferPoolManager> MakeBpm() {
 
 TEST(BPlusTreeEncodedKeyTest, InsertGetSequential) {
   auto bpm = MakeBpm();
-  BPlusTree<EncodedKey, RID> tree{bpm, 3, 4};  // small fanout to force splits
+  BPlusTree tree{bpm, 3, 4};  // small fanout to force splits
   auto txn = std::make_unique<Transaction>(0);
 
   const int n = 300;
@@ -55,7 +55,7 @@ TEST(BPlusTreeEncodedKeyTest, InsertGetSequential) {
 
 TEST(BPlusTreeEncodedKeyTest, ShuffledInsertWithNegatives) {
   auto bpm = MakeBpm();
-  BPlusTree<EncodedKey, RID> tree{bpm, 3, 4};
+  BPlusTree tree{bpm, 3, 4};
   auto txn = std::make_unique<Transaction>(0);
 
   std::vector<int64_t> keys;
@@ -87,36 +87,9 @@ TEST(BPlusTreeEncodedKeyTest, ShuffledInsertWithNegatives) {
   remove(kTestDb);
 }
 
-// CONTROL: same shuffled pattern on the original int64/int32 tree. If this
-// also fails, the bug is pre-existing in the B+Tree (not the EncodedKey work).
-TEST(BPlusTreeEncodedKeyTest, ControlShuffledIntKeys) {
-  auto bpm = MakeBpm();
-  BPlusTree<key_t, value_t> tree{bpm, 3, 4};
-  auto txn = std::make_unique<Transaction>(0);
-
-  std::vector<key_t> keys;
-  for (key_t k = -30; k < 30; ++k) {
-    keys.push_back(k);
-  }
-  std::mt19937 rng(12345);
-  std::shuffle(keys.begin(), keys.end(), rng);
-
-  for (size_t i = 0; i < keys.size(); ++i) {
-    ASSERT_TRUE(tree.Insert(keys[i], static_cast<value_t>(keys[i]), txn.get())) << "key=" << keys[i];
-  }
-  for (size_t i = 0; i < keys.size(); ++i) {
-    value_t out;
-    ASSERT_TRUE(tree.GetValue(keys[i], out, txn.get())) << "key=" << keys[i];
-    EXPECT_EQ(out, static_cast<value_t>(keys[i])) << "key=" << keys[i];
-  }
-
-  txn.release();
-  remove(kTestDb);
-}
-
 TEST(BPlusTreeEncodedKeyTest, DuplicateInsertRejected) {
   auto bpm = MakeBpm();
-  BPlusTree<EncodedKey, RID> tree{bpm, 3, 4};
+  BPlusTree tree{bpm, 3, 4};
   auto txn = std::make_unique<Transaction>(0);
 
   ASSERT_TRUE(tree.Insert(MakeEncodedKey<int64_t>(42), RID(1, 1), txn.get()));
