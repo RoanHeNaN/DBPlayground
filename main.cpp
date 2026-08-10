@@ -1,23 +1,25 @@
+#include <cstdint>
 #include <iostream>
-#include <vector>
+#include <string>
 
+#include "Common/Codec.h"
+#include "Common/Slice.h"
 #include "Core/MiniKV.h"
 
 int main() {
   dbplay::MiniKV db;
 
-  std::vector<std::pair<dbplay::key_t, dbplay::value_t>> entries;
-  for (int i = 0; i < 100; ++i) {
-    entries.emplace_back(i, i + 100);
+  // Callers know their own types at compile time and encode to bytes; MiniKV
+  // itself is type-erased (Slice in, bytes out).
+  for (int64_t i = 0; i < 100; ++i) {
+    db.Insert(dbplay::encode_key<int64_t>(i), dbplay::encode_value<int32_t>(static_cast<int32_t>(i + 100)));
   }
 
-  for (const auto &entry : entries) {
-    db.Insert(entry.first, entry.second);
-  }
-
-  for (const auto &entry : entries) {
-    std::cout << entry.first << " : " << entry.second << " in database: " << entry.first << " : " << db.Get(entry.first)
-              << std::endl;
+  for (int64_t i = 0; i < 100; ++i) {
+    std::string raw;
+    if (db.Get(dbplay::encode_key<int64_t>(i), &raw)) {
+      std::cout << i << " : " << dbplay::decode_value<int32_t>(dbplay::Slice(raw)) << std::endl;
+    }
   }
 
   return 0;

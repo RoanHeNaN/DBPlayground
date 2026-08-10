@@ -25,7 +25,8 @@ class IStorageEngine {
  public:
   virtual ~IStorageEngine() = default;
 
-  // Insert or overwrite the value for `key`. Returns true on success.
+  // Insert `value` for `key` if the key is absent. Returns false if the key
+  // already exists (no overwrite).
   virtual bool Insert(const Slice &key, const Slice &value) = 0;
 
   // Look up `key`. On hit, writes the raw value bytes into *value and returns

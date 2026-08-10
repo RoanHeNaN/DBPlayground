@@ -3,34 +3,21 @@
 //
 
 #include "Core/MiniKV.h"
+
 #include "Common/Config.h"
+#include "Storage/BPlusTreeEngine.h"
 
 namespace dbplay {
 
 MiniKV::MiniKV()
-    : disk_manager_(new DiskManager("dbplayground.db")),
-      buffer_pool_manager_(new BufferPoolManager(BUFFER_POOL_SIZE, disk_manager_)),
-      container_(buffer_pool_manager_) {}
+    : disk_manager_(std::make_shared<DiskManager>("dbplayground.db")),
+      buffer_pool_manager_(std::make_shared<BufferPoolManager>(BUFFER_POOL_SIZE, disk_manager_)),
+      engine_(std::make_unique<BPlusTreeEngine>(buffer_pool_manager_)) {}
 
-value_t MiniKV::Get(key_t key) {
-  value_t value;
-  if (container_.GetValue(key, value)) return value;
+bool MiniKV::Insert(const Slice &key, const Slice &value) { return engine_->Insert(key, value); }
 
-  return -1;
-}
+bool MiniKV::Get(const Slice &key, std::string *value) { return engine_->Get(key, value); }
 
-bool MiniKV::Insert(key_t key, value_t value) { return container_.Insert(key, value); }
-
-bool MiniKV::Update(key_t key, value_t value) { return container_.Insert(key, value); }
-
-bool MiniKV::Remove(key_t key) {
-  container_.Remove(key);
-  return true;
-}
-
-values MiniKV::Range(key_t key) {
-  values res;
-  return res;
-};
+bool MiniKV::Remove(const Slice &key) { return engine_->Remove(key); }
 
 }  // namespace dbplay
