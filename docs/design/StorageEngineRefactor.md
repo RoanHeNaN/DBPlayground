@@ -128,8 +128,11 @@ no Cartesian product.
   value blob, proving "multi-column = application-layer type system on top of a
   type-erased byte engine" (see `TypeSystem.md`).
 
-### Deferred (explicitly out of scope for now)
-- **Iterator** (`IIterator`) — not implemented in this refactor.
+### Deferred (explicitly out of scope for this KV refactor)
+- **Iterator** — NOW DONE, but built as the columnar work's `IKvCursor` /
+  `IStorageEngine::NewCursor()` rather than the old `IIterator` sketch. See
+  [`ColumnarTableSource.md`](ColumnarTableSource.md) (T0). It is the row engine's
+  ordered scan primitive, consumed by `RowTableSource`.
 - **Variable-length keys** (string/blob keys) — needs slotted pages.
 - **Inline-small / overflow-large value** optimization — currently always
   overflow via RID.
