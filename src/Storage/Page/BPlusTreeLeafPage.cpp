@@ -53,7 +53,7 @@ void BPlusTreeLeafPage::SetNextPageId(page_id_t next_page_id) { next_page_id_ = 
 
 /**
  * Helper method to find the first index i so that array_[i].first >= key
- * NOTE: This method is only used when generating index iterator
+ * NOTE: binary search; used by lookup/insert/remove (and a future iterator)
  */
 int BPlusTreeLeafPage::KeyIndex(const EncodedKey &key) const {
   const MappingType *p = std::lower_bound(array_, array_ + GetSize(), key,
@@ -146,16 +146,6 @@ void BPlusTreeLeafPage::CopyNFrom(MappingType *items, int size) {
  * If the key does not exist, then return false
  */
 bool BPlusTreeLeafPage::Lookup(const EncodedKey &key, RID *value) const {
-  /* Linear search */
-  // for (int i = 0; i < GetSize(); i++) {
-  //   if (comparator(array_[i].first, key) == 0) {
-  //     if (value != nullptr) {
-  //       *value = array_[i].second;
-  //     }
-  //     return true;
-  //   }
-  // }
-  // return false;
 
   /* Binary search */
   int pos = KeyIndex(key);
@@ -267,5 +257,4 @@ void BPlusTreeLeafPage::CopyFirstFrom(const MappingType &item) {
   array_[0] = item;
 }
 
-// Phase 2: leaf stores (order-preserving key, RID into the TupleStore).
 }  // namespace dbplay

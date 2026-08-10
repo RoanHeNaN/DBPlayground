@@ -35,11 +35,11 @@ namespace dbplay {
  * Main class providing the API for the Interactive B+ Tree.
  *
  * Implementation of simple b+ tree data structure where internal pages direct
- * the search and leaf pages contain actual data.
+ * the search and leaf pages hold (key, RID) entries into the TupleStore.
  * (1) We only support unique key
  * (2) support insert & remove
  * (3) The structure should shrink and grow dynamically
- * (4) Implement index iterator for range scan
+ * (4) leaf value is a RID; a range iterator is not yet implemented
  */
 class BPlusTree {
   using MappingType = std::pair<EncodedKey, RID>;

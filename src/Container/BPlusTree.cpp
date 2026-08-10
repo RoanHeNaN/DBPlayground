@@ -659,7 +659,7 @@ bool BPlusTree::IsSafe(N *node, enum OpType op) {
  * Find leaf page containing particular key.
  * It's similar to FindLeafPage, but with concurrency control for read/write operations.
  *
- * Index iterator is not tested for concurrent access, so they use FindLeafPage.
+ * The plain FindLeafPage (no concurrency control) is kept for tests and debugging.
  * Other read/write operations to the B+ tree should use this function, with concurrency control.
  *
  * root_mutex_ is held throughout the call, to avoid deadlock.
@@ -768,6 +768,4 @@ std::shared_ptr<Page> BPlusTree::FindLeafPage(const EncodedKey &key, bool left_m
 
 void BPlusTree::UpdateRootPageId(int insert_record) {}
 
-// Phase 2: the tree as a pure index — EncodedKey keys, RID values pointing into
-// the TupleStore. Internal pages use page_id_t child pointers (see BPlusTree.h).
 }  // namespace dbplay

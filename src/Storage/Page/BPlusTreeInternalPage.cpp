@@ -57,7 +57,7 @@ void BPlusTreeInternalPage::SetKeyAt(int index, const EncodedKey &key) {
 int BPlusTreeInternalPage::ValueIndex(const page_id_t &value) const {
   for (int i = 0; i < GetSize(); i++) {
     // We are comparing values here, of type page_id_t. So we just use ==.
-    // KeyComparator is used for comparing keys.
+    // Keys elsewhere are ordered by EncodedKey memcmp; values (page_ids) use ==.
     if (array_[i].second == value) {
       return i;
     }
@@ -353,7 +353,4 @@ void BPlusTreeInternalPage::CopyFirstFrom(const MappingType &pair,
   IncreaseSize(1);
 }
 
-// page_id_t for internal_node should be page_id_t.
-// Phase 2: internal node keyed by the order-preserving EncodedKey; child
-// pointers remain page_id_t.
 }  // namespace dbplay
