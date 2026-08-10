@@ -8,7 +8,9 @@
 // BufferPoolManager and read/write their own pages in the same db file. The
 // only link between them is the RID value the engine carries across.
 //
-// Storage model: a chain of slotted value pages.
+// Storage model: a chain of slotted value pages. Per-page byte layout (the same
+// bytes whether the page sits in a buffer-pool frame or on disk; slot offsets
+// are relative to the page start, so they are position-independent):
 //   page: [ header | slot[0] slot[1] ... ->   ...free...   <- ...v1 v0 ]
 //   RID  : (page_id, slot_num) -> which page, which slot directory entry.
 //
