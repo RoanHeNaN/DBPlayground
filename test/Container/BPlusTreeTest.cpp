@@ -2,8 +2,9 @@
 // Created by 何智强 on 2021/10/11.
 //
 
-#include <algorithm>
+#include <memory>
 
+#include "Concurrency/Transaction.h"
 #include "Container/BPlusTree.h"
 #include "gtest/gtest.h"
 
@@ -13,7 +14,7 @@ TEST(BPlusTreeTest, InsertTest1) {
   auto bpm = std::make_shared<BufferPoolManager>(50, disk_manager);
 
   BPlusTree<key_t, value_t> tree{bpm, 2, 3};
-  Transaction *transaction = new Transaction{0};
+  std::unique_ptr<Transaction> transaction = std::make_unique<Transaction>(0);
 
   key_t max_key = 5;
   uint32_t value_mask = 0xFFFFFFFF;
@@ -24,11 +25,10 @@ TEST(BPlusTreeTest, InsertTest1) {
 
   for (key_t key = 0; key < max_key; ++key) {
     value_t value;
-    tree.GetValue(key, value, transaction);
+    tree.GetValue(key, value, transaction.get());
     EXPECT_EQ(value, key & value_mask);
   }
-
-  delete transaction;
+  transaction.release();
   remove("test.db");
 }
 }  // namespace dbplay

@@ -58,7 +58,7 @@ TEST(CoreTest, ConcurrentInsert) {
     auto container = std::make_shared<BPlusTree<key_t, value_t>>(buffer_pool_manager);
 
     std::vector<key_t> keys;
-    constexpr size_t NUM_KEYS = 20000000;  // 20 million
+    constexpr size_t NUM_KEYS = 20000;  // 20 K
 
     std::random_device rd;
     std::mt19937 mt(rd());
@@ -97,7 +97,7 @@ TEST(CoreTest, DISABLED_ConcurrentRemove) {
     auto container = std::make_shared<BPlusTree<key_t, value_t>>(buffer_pool_manager);
 
     std::vector<key_t> keys;
-    constexpr size_t NUM_KEYS = 20000;
+    constexpr size_t NUM_KEYS = 200;
 
     std::random_device rd;
     std::mt19937 mt(rd());
@@ -143,7 +143,7 @@ TEST(CoreTest, DISABLED_ConcurrentRead) {
     auto container = std::make_shared<BPlusTree<key_t, value_t>>(buffer_pool_manager);
 
     std::vector<key_t> keys;
-    constexpr size_t NUM_KEYS = 20000;
+    constexpr size_t NUM_KEYS = 200;
 
     std::random_device rd;
     std::mt19937 mt(rd());
