@@ -179,7 +179,7 @@ TEST(BufferPoolManagerTest, IsDirty) {
 // Disabled by default: this is an I/O-bound concurrency stress test (~40s per run
 // due to eviction thrashing against synchronous disk writes), so 500 runs would take
 // hours. Run explicitly with:
-//   ./BufferPoolManagerTest --gtest_also_run_disabled_tests \
+//   ./test/BufferPoolManagerTest_exe --gtest_also_run_disabled_tests \
 //       --gtest_filter='BufferPoolManagerTest.DISABLED_HardTest4'
 TEST(BufferPoolManagerTest, DISABLED_HardTest4) {
   const int num_threads = 3;
