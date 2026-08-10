@@ -55,7 +55,7 @@ class Page {
   static constexpr size_t OFFSET_LSN = 4;
 
  private:
-  inline void ResetMemory() { memset(data_, OFFSET_PAGE_START, PAGE_SIZE + 16); }
+  inline void ResetMemory() { memset(data_, 0, PAGE_SIZE); }
 
   char data_[PAGE_SIZE];
   page_id_t page_id_ = INVALID_PAGE_ID;
