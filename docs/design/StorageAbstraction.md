@@ -251,8 +251,12 @@ row-group skipping (predicate pushdown), the offsets drive projection reads.
 - **C3 — Native columnar file + composition** — `NativeColumnarFileFormat`
   (writer + reader with footer/pages), the composed `TableSource`; write→read a
   file through Layer A/B, projection-pushdown test against `ITableSource&`.
-- **C4 — pushdown & more impls** — footer-stats predicate pushdown; Dictionary/RLE
-  codecs; `NativeRowStoreFileFormat`; S3Storage stub. All additive.
+- **C4 — more impls (partial)** — real compression **DONE** (`ZlibCompression`
+  over contrib zlib-ng; a file written with `CompressionId::Zlib` is read back by
+  a `None`-configured format, proving self-description). Still future, all
+  additive: footer-stats predicate pushdown (deferred to the expression engine,
+  [`ExpressionEngine.md`](ExpressionEngine.md), not built ad-hoc here);
+  Dictionary/RLE codecs; `NativeRowStoreFileFormat`; S3Storage stub.
 - **Refactor (independent)** — fold `IStorageEngine`/`BPlusTreeEngine` into
   `BTreeTableSource`; consumers to migrate: `MiniKV`, `RowTableSource`,
   `KvCursorTest`.

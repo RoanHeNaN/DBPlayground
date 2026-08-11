@@ -112,4 +112,33 @@ TEST(ColumnCodecTest, UnknownIdThrows) {
   EXPECT_THROW(reg.Get(CompressionId::Invalid), std::invalid_argument);
 }
 
+TEST(ColumnCodecTest, ZlibCompressionRoundTripAndShrinks) {
+  const CodecRegistry &reg = CodecRegistry::Instance();
+  const ICompression &zlib = reg.Get(CompressionId::Zlib);
+  EXPECT_EQ(zlib.id(), CompressionId::Zlib);
+
+  // Encode a compressible column (a run of repeating strings).
+  PlainCodec codec;
+  Column s(Type::String);
+  for (int i = 0; i < 500; ++i) {
+    s.AppendBytes(Slice("the same repeated token "));
+  }
+  std::string encoded;
+  codec.Encode(s, &encoded);
+
+  std::string stored;
+  zlib.Compress(Slice(encoded), &stored);
+  EXPECT_LT(stored.size(), encoded.size());  // repetitive data actually shrinks
+
+  std::string back;
+  zlib.Decompress(Slice(stored), encoded.size(), &back);
+  ASSERT_EQ(back, encoded);
+
+  Column out(Type::String);
+  codec.Decode(Slice(back), s.size(), &out);
+  ASSERT_EQ(out.size(), s.size());
+  EXPECT_EQ(out.GetBytes(0).ToString(), "the same repeated token ");
+  EXPECT_EQ(out.GetBytes(499).ToString(), "the same repeated token ");
+}
+
 }  // namespace dbplay

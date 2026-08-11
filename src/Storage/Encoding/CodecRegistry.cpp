@@ -8,6 +8,7 @@
 
 #include "Storage/Encoding/NoCompression.h"
 #include "Storage/Encoding/PlainCodec.h"
+#include "Storage/Encoding/ZlibCompression.h"
 
 namespace dbplay {
 
@@ -28,9 +29,12 @@ const ICodec &CodecRegistry::Get(EncodingId id) const {
 
 const ICompression &CodecRegistry::Get(CompressionId id) const {
   static const NoCompression kNone;
+  static const ZlibCompression kZlib;
   switch (id) {
     case CompressionId::None:
       return kNone;
+    case CompressionId::Zlib:
+      return kZlib;
     default:
       throw std::invalid_argument("CodecRegistry: unknown CompressionId");
   }

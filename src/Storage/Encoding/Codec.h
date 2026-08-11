@@ -33,6 +33,7 @@ enum class EncodingId : uint8_t {
 enum class CompressionId : uint8_t {
   Invalid = 0,
   None = 1,  // identity
+  Zlib = 2,  // zlib/deflate (contrib zlib-ng, ZLIB_COMPAT)
 };
 
 // Level 1: typed values <-> encoded bytes. One codec instance handles all Types;

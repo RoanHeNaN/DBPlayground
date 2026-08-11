@@ -15,11 +15,11 @@ namespace dbplay {
 namespace {
 
 constexpr char kMagic[4] = {'D', 'B', 'C', '1'};
-// Codecs used by the writer (C3 is fixed to Plain/None; the footer still stores
-// the ids, so the reader resolves them through the registry -- adding a codec is
-// a writer-side change, not a format change).
+// The encoding the writer uses (fixed to Plain for now). Compression is chosen
+// per format instance and threaded into the writer. Either way the footer
+// stores the ids, so the reader resolves both through the registry -- adding a
+// codec is a writer-side change, not a format change.
 constexpr EncodingId kWriteEncoding = EncodingId::Plain;
-constexpr CompressionId kWriteCompression = CompressionId::None;
 
 // Per-column physical record in the footer.
 struct ColumnMeta {
@@ -70,7 +70,8 @@ uint64_t ReadU64At(const IInputFile &in, uint64_t offset) {
 
 class NativeColumnarWriter : public IChunkWriter {
  public:
-  NativeColumnarWriter(std::unique_ptr<IOutputStream> out, const Schema &schema) : out_(std::move(out)) {
+  NativeColumnarWriter(std::unique_ptr<IOutputStream> out, const Schema &schema, CompressionId compression)
+      : out_(std::move(out)), compression_(compression) {
     cols_.reserve(schema.size());
     for (const Field &f : schema) {
       cols_.emplace_back(f.type);
@@ -95,7 +96,7 @@ class NativeColumnarWriter : public IChunkWriter {
 
     const CodecRegistry &reg = CodecRegistry::Instance();
     const ICodec &codec = reg.Get(kWriteEncoding);
-    const ICompression &comp = reg.Get(kWriteCompression);
+    const ICompression &comp = reg.Get(compression_);
 
     std::string body(kMagic, sizeof(kMagic));  // pages accumulate after the magic
     std::vector<ColumnMeta> metas;
@@ -105,7 +106,7 @@ class NativeColumnarWriter : public IChunkWriter {
       codec.Encode(col, &encoded);
       std::string stored;
       comp.Compress(Slice(encoded), &stored);
-      metas.push_back({static_cast<uint8_t>(kWriteEncoding), static_cast<uint8_t>(kWriteCompression),
+      metas.push_back({static_cast<uint8_t>(kWriteEncoding), static_cast<uint8_t>(compression_),
                        static_cast<uint64_t>(body.size()), stored.size(), encoded.size(), col.size()});
       body.append(stored);
     }
@@ -133,6 +134,7 @@ class NativeColumnarWriter : public IChunkWriter {
 
  private:
   std::unique_ptr<IOutputStream> out_;
+  CompressionId compression_;
   std::vector<Column> cols_;
   bool closed_ = false;
 };
@@ -233,7 +235,7 @@ std::unique_ptr<IBatchCursor> NativeColumnarFileFormat::Scan(IStorage &store, co
 }
 
 std::unique_ptr<IChunkWriter> NativeColumnarFileFormat::OpenWriter(IStorage &store, const std::string &path) {
-  return std::make_unique<NativeColumnarWriter>(store.OpenOutput(path), schema_);
+  return std::make_unique<NativeColumnarWriter>(store.OpenOutput(path), schema_, write_compression_);
 }
 
 }  // namespace dbplay

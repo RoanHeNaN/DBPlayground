@@ -125,6 +125,27 @@ TEST(NativeColumnarFileFormatTest, MultipleFilesYieldConcatenatedRowGroups) {
   EXPECT_EQ(ids, (std::vector<int64_t>{0, 1, 2, 100, 101}));
 }
 
+TEST(NativeColumnarFileFormatTest, ZlibCompressedFileIsSelfDescribing) {
+  auto store = std::make_shared<MemStorage>();
+
+  // Write with zlib compression...
+  {
+    auto writer_fmt = std::make_shared<NativeColumnarFileFormat>(MakeSchema(), CompressionId::Zlib);
+    WriteFile(*writer_fmt, *store, "z.dbc", /*start=*/0, /*count=*/200);
+  }
+
+  // ...and read it back through a format configured with the DEFAULT (None)
+  // compression: the reader resolves each column's codec from the ids stored in
+  // the file, so the writer's choice is invisible to it -- the file self-describes.
+  auto reader_fmt = std::make_shared<NativeColumnarFileFormat>(MakeSchema());
+  TableSource src(reader_fmt, store, {"z.dbc"});
+  auto rows = CollectProjected(src, {0, 1, 2});
+  ASSERT_EQ(rows.size(), 200u);
+  EXPECT_EQ(rows[0][1].AsString(), "row0");
+  EXPECT_EQ(rows[123][0].AsInt64(), 123);
+  EXPECT_DOUBLE_EQ(rows[123][2].AsDouble(), 123.0 * 1.5);
+}
+
 TEST(NativeColumnarFileFormatTest, PersistsAcrossStorageAndReopen) {
   const std::string root = "nativecolumnar_test_dir";
   fs::remove_all(root);

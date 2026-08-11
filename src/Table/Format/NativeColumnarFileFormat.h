@@ -27,6 +27,7 @@
 #include <utility>
 #include <vector>
 
+#include "Storage/Encoding/Codec.h"
 #include "Storage/File/IStorage.h"
 #include "Table/Format/IFileFormat.h"
 #include "Table/Schema.h"
@@ -35,7 +36,11 @@ namespace dbplay {
 
 class NativeColumnarFileFormat : public IFileFormat {
  public:
-  explicit NativeColumnarFileFormat(Schema schema) : schema_(std::move(schema)) {}
+  // `compression` is the codec new files are WRITTEN with; reads always resolve
+  // each column's codec from the ids stored in the file, so a reader can open a
+  // file regardless of how this format is configured.
+  explicit NativeColumnarFileFormat(Schema schema, CompressionId compression = CompressionId::None)
+      : schema_(std::move(schema)), write_compression_(compression) {}
 
   const Schema &schema() const override { return schema_; }
 
@@ -46,6 +51,7 @@ class NativeColumnarFileFormat : public IFileFormat {
 
  private:
   Schema schema_;
+  CompressionId write_compression_;
 };
 
 }  // namespace dbplay

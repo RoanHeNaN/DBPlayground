@@ -11,4 +11,4 @@ endif()
 
 target_include_directories(dbplayground_lib PUBLIC ${PROJECT_SOURCE_DIR}/src)
 
-target_link_libraries(dbplayground_lib glog::glog)
+target_link_libraries(dbplayground_lib glog::glog _zlib)
