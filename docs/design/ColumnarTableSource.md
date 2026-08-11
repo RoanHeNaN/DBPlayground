@@ -2,6 +2,10 @@
 
 > Status: **T0–T4 implemented** (the row path works end to end through the seam).
 > T5 (a native columnar engine) is future. See the phase list at the bottom.
+> **T5 is refined and superseded by [`StorageAbstraction.md`](StorageAbstraction.md)**,
+> which replaces the single `ColumnarTableSource` with a composable
+> `TableSource(IFileFormat, IStorage)` model (byte-range Object Store + File
+> Format + Codec) and revises the naming below.
 > Companion: [`StorageEngineRefactor.md`](StorageEngineRefactor.md) built the
 > type-erased **KV / row** engine (`IStorageEngine`, `Slice` in / bytes out).
 > This doc adds the layer that lets a **columnar** engine coexist with it.
@@ -103,7 +107,10 @@ class ITableSource {
 ```
 
 Filter pushdown / statistics / ordering are **not** here yet; they will be added
-as optional capability interfaces the query layer probes for (see Future).
+as optional capability interfaces the query layer probes for (see Future). The
+scalar expression engine that consumes this seam — and that pushes `search()` /
+vector-distance expressions into such an index capability — is designed in
+[`ExpressionEngine.md`](ExpressionEngine.md).
 
 ## How the row/KV engine plugs in (implemented)
 
@@ -144,7 +151,9 @@ page chain, `Scan(projection)` reads only the requested column chains and emits
   `RowTableSourceTest`).
 - **T4 — a scan→project→collect operator** — DONE (`Execution/ScanExecutor`;
   `ScanExecutorTest` runs against `ITableSource&` only).
-- **T5 — native ColumnarTableSource** — FUTURE.
+- **T5 — native ColumnarTableSource** — FUTURE; refined into the composable
+  `TableSource(IFileFormat, IStorage)` model in
+  [`StorageAbstraction.md`](StorageAbstraction.md) (phases C1–C4).
 
 T0–T4 were almost entirely **additive**: the only change to existing code was
 `IStorageEngine` gaining `NewCursor()` (+ `BPlusTree` a couple of accessors).
