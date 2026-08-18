@@ -90,4 +90,15 @@ void PlainCodec::Decode(const Slice &bytes, size_t value_count, Column *out) con
   }
 }
 
+size_t PlainCodec::FixedWidth(Type t) const {
+  switch (t) {
+    case Type::Int32:  return sizeof(int32_t);
+    case Type::Int64:  return sizeof(int64_t);
+    case Type::Float:  return sizeof(float);
+    case Type::Double: return sizeof(double);
+    case Type::Bool:   return sizeof(bool);
+    default:           return 0;  // String / Blob are variable-length
+  }
+}
+
 }  // namespace dbplay

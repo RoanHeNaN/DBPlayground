@@ -33,14 +33,35 @@ class IChunkWriter {
   virtual void Close() = 0;
 };
 
+// Per-file positional reader. Its metadata (footer) is parsed when the reader is
+// opened (see IFileFormat::OpenReader); column bytes are read lazily per range.
+class IFileReader {
+ public:
+  virtual ~IFileReader() = default;
+
+  virtual uint64_t row_count() const = 0;
+
+  // Fill *out with rows [first_row, first_row+num_rows) (num_rows clamped to the
+  // file end) of the projected columns. False if the range is empty.
+  virtual bool ReadRange(uint64_t first_row, uint64_t num_rows, Chunk *out) = 0;
+};
+
 class IFileFormat {
  public:
   virtual ~IFileFormat() = default;
 
   virtual const Schema &schema() const = 0;
 
+  // Open one file for reading: this is where the per-file metadata (footer) is
+  // read and validated. Returns a reader that retains the file bytes for lazy
+  // per-range column reads, or nullptr if `file` does not exist. `store` must
+  // outlive the returned reader.
+  virtual std::unique_ptr<IFileReader> OpenReader(IStorage &store, const std::string &file,
+                                                  const std::vector<int> &projection) = 0;
+
   // Scan `files` (each an independent unit -- a row group) reading only the
-  // projected columns' bytes from `store`. `store` must outlive the cursor.
+  // projected columns' bytes from `store`. Drives OpenReader lazily, per file.
+  // `store` must outlive the cursor.
   virtual std::unique_ptr<IBatchCursor> Scan(IStorage &store, const std::vector<std::string> &files,
                                              const std::vector<int> &projection) = 0;
 

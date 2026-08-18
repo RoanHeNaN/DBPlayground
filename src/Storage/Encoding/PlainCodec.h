@@ -21,6 +21,7 @@ class PlainCodec : public ICodec {
   EncodingId id() const override { return EncodingId::Plain; }
   void Encode(const Column &col, std::string *out) const override;
   void Decode(const Slice &bytes, size_t value_count, Column *out) const override;
+  size_t FixedWidth(Type t) const override;
 };
 
 }  // namespace dbplay

@@ -1,7 +1,10 @@
 //
 // C3 of the composable storage model (docs/design/StorageAbstraction.md).
-// R1 read path (docs/design/ColumnarReadPath.md): positional ReadRange + a
-// batched Scan cursor built on it.
+// R1/R2 read path (docs/design/ColumnarReadPath.md): metadata (footer) is read
+// in OpenReader (driven by Scan, per file); the reader's ctor does no page IO.
+// The one encoding-dependent step -- "read rows [a,b) of a page" -- is a
+// PageAccessor: a universal whole-page-decode default, plus a direct-offset fast
+// path for fixed-width + uncompressed columns. Everything else is shared.
 //
 
 #include "Table/Format/NativeColumnarFileFormat.h"
@@ -12,6 +15,8 @@
 #include <stdexcept>
 
 #include "Storage/Encoding/CodecRegistry.h"
+#include "Table/Chunk.h"
+#include "Table/Column.h"
 
 namespace dbplay {
 
@@ -41,8 +46,7 @@ uint64_t GetU64(const char *&p) {
   return v;
 }
 
-// Copy `count` values of `src` starting at `start` onto the end of `dst` (same
-// Type). Used to buffer whole chunks (writer) and to slice row ranges (reader).
+// Copy `count` values of `src` starting at `start` onto the end of `dst`.
 void AppendRange(Column *dst, const Column &src, size_t start, size_t count) {
   const size_t end = start + count;
   switch (dst->type()) {
@@ -66,6 +70,152 @@ uint64_t ReadU64At(const IInputFile &in, uint64_t offset) {
   std::memcpy(&v, buf.data(), sizeof(v));
   return v;
 }
+
+// Read + validate the footer: row_count and every column's ColumnMeta.
+void ParseFooter(const IInputFile &in, uint64_t *row_count, std::vector<ColumnMeta> *metas) {
+  const uint64_t size = in.Size();
+  const uint64_t trailer = sizeof(kMagic) + sizeof(uint64_t);  // magic + footer_size
+  if (size < sizeof(kMagic) + trailer) {
+    throw std::runtime_error("NativeColumnar: file too small / not a native file");
+  }
+
+  std::string tail_magic;
+  if (!in.ReadAt(size - sizeof(kMagic), sizeof(kMagic), &tail_magic) ||
+      std::memcmp(tail_magic.data(), kMagic, sizeof(kMagic)) != 0) {
+    throw std::runtime_error("NativeColumnar: bad trailing magic");
+  }
+
+  const uint64_t footer_size = ReadU64At(in, size - trailer);
+  std::string footer;
+  if (!in.ReadAt(size - trailer - footer_size, footer_size, &footer)) {
+    throw std::runtime_error("NativeColumnar: truncated footer");
+  }
+
+  const char *p = footer.data();
+  *row_count = GetU64(p);
+  const uint64_t col_count = GetU64(p);
+  metas->resize(col_count);
+  for (uint64_t i = 0; i < col_count; ++i) {
+    (*metas)[i].encoding = GetU8(p);
+    (*metas)[i].compression = GetU8(p);
+    (*metas)[i].offset = GetU64(p);
+    (*metas)[i].stored_size = GetU64(p);
+    (*metas)[i].raw_size = GetU64(p);
+    (*metas)[i].value_count = GetU64(p);
+  }
+}
+
+// ---- PageAccessor: the one encoding-dependent step (read rows [a,b) of a page) ----
+
+class PageAccessor {
+ public:
+  virtual ~PageAccessor() = default;
+  // Append rows [first, first+count) of this page (page-local indices) to *out.
+  virtual void ReadRows(uint64_t first, uint64_t count, Column *out) = 0;
+};
+
+// Universal path: fetch + decode the whole page once (memoized), then slice.
+// Correct for every encoding/compression.
+class WholePageAccessor : public PageAccessor {
+ public:
+  WholePageAccessor(const IInputFile &in, ColumnMeta meta, Type type) : in_(in), meta_(meta), type_(type) {}
+
+  void ReadRows(uint64_t first, uint64_t count, Column *out) override {
+    if (decoded_ == nullptr) {
+      std::string stored;
+      if (!in_.ReadAt(meta_.offset, meta_.stored_size, &stored)) {
+        throw std::runtime_error("NativeColumnar: truncated column page");
+      }
+      std::string encoded;
+      const CodecRegistry &reg = CodecRegistry::Instance();
+      reg.Get(static_cast<CompressionId>(meta_.compression)).Decompress(Slice(stored), meta_.raw_size, &encoded);
+      decoded_ = std::make_unique<Column>(type_);
+      reg.Get(static_cast<EncodingId>(meta_.encoding)).Decode(Slice(encoded), meta_.value_count, decoded_.get());
+    }
+    AppendRange(out, *decoded_, static_cast<size_t>(first), static_cast<size_t>(count));
+  }
+
+ private:
+  const IInputFile &in_;
+  ColumnMeta meta_;
+  Type type_;
+  std::unique_ptr<Column> decoded_;  // whole page, decoded on first use
+};
+
+// Fast path: fixed-width + uncompressed -> read only the requested values'
+// bytes (value i at offset + i*width) and decode just those.
+class FixedWidthDirectAccessor : public PageAccessor {
+ public:
+  FixedWidthDirectAccessor(const IInputFile &in, ColumnMeta meta, size_t width) : in_(in), meta_(meta), width_(width) {}
+
+  void ReadRows(uint64_t first, uint64_t count, Column *out) override {
+    std::string bytes;
+    if (!in_.ReadAt(meta_.offset + first * width_, count * width_, &bytes)) {
+      throw std::runtime_error("NativeColumnar: truncated column page (direct)");
+    }
+    CodecRegistry::Instance().Get(static_cast<EncodingId>(meta_.encoding)).Decode(Slice(bytes), count, out);
+  }
+
+ private:
+  const IInputFile &in_;
+  ColumnMeta meta_;
+  size_t width_;
+};
+
+// Pick the fast path only when the encoding is fixed-width AND the page is
+// uncompressed; otherwise the universal whole-page path. Chosen once per page.
+std::unique_ptr<PageAccessor> MakeAccessor(const IInputFile &in, const ColumnMeta &m, Type type) {
+  const size_t width = CodecRegistry::Instance().Get(static_cast<EncodingId>(m.encoding)).FixedWidth(type);
+  if (width > 0 && static_cast<CompressionId>(m.compression) == CompressionId::None) {
+    return std::make_unique<FixedWidthDirectAccessor>(in, m, width);
+  }
+  return std::make_unique<WholePageAccessor>(in, m, type);
+}
+
+// ---- per-file reader: no page IO in the ctor; pages read via PageAccessors ----
+
+class NativeColumnarFileReader : public IFileReader {
+ public:
+  NativeColumnarFileReader(std::unique_ptr<IInputFile> in, std::vector<int> projection, std::vector<Type> types,
+                           const std::vector<ColumnMeta> &metas, uint64_t row_count)
+      : in_(std::move(in)), projection_(std::move(projection)), types_(std::move(types)), row_count_(row_count) {
+    accessors_.reserve(projection_.size());
+    for (size_t k = 0; k < projection_.size(); ++k) {
+      accessors_.push_back(MakeAccessor(*in_, metas[k], types_[k]));  // metas parallel to projection_
+    }
+  }
+
+  uint64_t row_count() const override { return row_count_; }
+
+  bool ReadRange(uint64_t first_row, uint64_t num_rows, Chunk *out) override {
+    if (first_row >= row_count_) {
+      return false;
+    }
+    const uint64_t n = std::min<uint64_t>(num_rows, row_count_ - first_row);
+    if (n == 0) {
+      return false;
+    }
+
+    Chunk chunk;
+    chunk.column_ids = projection_;
+    chunk.row_count = n;
+    for (size_t k = 0; k < projection_.size(); ++k) {
+      Column col(types_[k]);
+      // Single row group today: page-local index == file row number.
+      accessors_[k]->ReadRows(first_row, n, &col);
+      chunk.columns.push_back(std::move(col));
+    }
+    *out = std::move(chunk);
+    return true;
+  }
+
+ private:
+  std::unique_ptr<IInputFile> in_;                          // retained; accessors reference it
+  std::vector<int> projection_;                             // schema field ids, output order
+  std::vector<Type> types_;                                 // parallel to projection_
+  uint64_t row_count_;
+  std::vector<std::unique_ptr<PageAccessor>> accessors_;    // parallel to projection_
+};
 
 // ---- writer: buffers full columns, seals the file on Close() ----
 
@@ -140,14 +290,14 @@ class NativeColumnarWriter : public IChunkWriter {
   bool closed_ = false;
 };
 
-// ---- Scan cursor: stream one file at a time in batch_rows-sized windows ----
+// ---- Scan cursor: drives OpenReader per file, streams batch_rows windows ----
 
 class NativeColumnarCursor : public IBatchCursor {
  public:
-  NativeColumnarCursor(IStorage *store, Schema schema, std::vector<std::string> files, std::vector<int> projection,
+  NativeColumnarCursor(IFileFormat *fmt, IStorage *store, std::vector<std::string> files, std::vector<int> projection,
                        size_t batch_rows)
-      : store_(store),
-        schema_(std::move(schema)),
+      : fmt_(fmt),
+        store_(store),
         files_(std::move(files)),
         projection_(std::move(projection)),
         batch_rows_(batch_rows == 0 ? 1 : batch_rows) {}
@@ -158,16 +308,15 @@ class NativeColumnarCursor : public IBatchCursor {
         if (next_file_ >= files_.size()) {
           return false;
         }
-        auto in = store_->OpenInput(files_[next_file_++]);
-        if (in == nullptr) {
+        reader_ = fmt_->OpenReader(*store_, files_[next_file_++], projection_);  // metadata read here
+        if (reader_ == nullptr) {
           continue;  // missing file
         }
-        reader_ = std::make_unique<NativeColumnarReader>(*in, schema_, projection_);
-        pos_ = 0;  // the reader decoded everything up front, so `in` can drop here
+        pos_ = 0;
       }
       if (pos_ >= reader_->row_count()) {
         reader_.reset();
-        continue;  // exhausted this file (also skips empty files)
+        continue;  // exhausted / empty file
       }
       const uint64_t n = std::min<uint64_t>(batch_rows_, reader_->row_count() - pos_);
       reader_->ReadRange(pos_, n, out);
@@ -177,98 +326,47 @@ class NativeColumnarCursor : public IBatchCursor {
   }
 
  private:
+  IFileFormat *fmt_;
   IStorage *store_;
-  Schema schema_;
   std::vector<std::string> files_;
   std::vector<int> projection_;
   size_t batch_rows_;
-  std::unique_ptr<NativeColumnarReader> reader_;
+  std::unique_ptr<IFileReader> reader_;
   uint64_t pos_ = 0;
   size_t next_file_ = 0;
 };
 
 }  // namespace
 
-// ---- NativeColumnarReader: footer parse + decode projected columns up front --
-
-NativeColumnarReader::NativeColumnarReader(const IInputFile &in, const Schema &schema, std::vector<int> projection)
-    : projection_(std::move(projection)) {
-  const uint64_t size = in.Size();
-  const uint64_t trailer = sizeof(kMagic) + sizeof(uint64_t);  // magic + footer_size
-  if (size < sizeof(kMagic) + trailer) {
-    throw std::runtime_error("NativeColumnar: file too small / not a native file");
+std::unique_ptr<IFileReader> NativeColumnarFileFormat::OpenReader(IStorage &store, const std::string &file,
+                                                                 const std::vector<int> &projection) {
+  auto in = store.OpenInput(file);
+  if (in == nullptr) {
+    return nullptr;
   }
 
-  std::string tail_magic;
-  if (!in.ReadAt(size - sizeof(kMagic), sizeof(kMagic), &tail_magic) ||
-      std::memcmp(tail_magic.data(), kMagic, sizeof(kMagic)) != 0) {
-    throw std::runtime_error("NativeColumnar: bad trailing magic");
-  }
+  uint64_t row_count = 0;
+  std::vector<ColumnMeta> metas;
+  ParseFooter(*in, &row_count, &metas);  // the metadata / "init" step
 
-  const uint64_t footer_size = ReadU64At(in, size - trailer);
-  const uint64_t footer_off = size - trailer - footer_size;
-  std::string footer;
-  if (!in.ReadAt(footer_off, footer_size, &footer)) {
-    throw std::runtime_error("NativeColumnar: truncated footer");
-  }
-
-  const char *p = footer.data();
-  row_count_ = GetU64(p);
-  const uint64_t col_count = GetU64(p);
-  std::vector<ColumnMeta> metas(col_count);
-  for (uint64_t i = 0; i < col_count; ++i) {
-    metas[i].encoding = GetU8(p);
-    metas[i].compression = GetU8(p);
-    metas[i].offset = GetU64(p);
-    metas[i].stored_size = GetU64(p);
-    metas[i].raw_size = GetU64(p);
-    metas[i].value_count = GetU64(p);
-  }
-
-  const CodecRegistry &reg = CodecRegistry::Instance();
-  decoded_.reserve(projection_.size());
-  for (int field : projection_) {
-    if (field < 0 || static_cast<uint64_t>(field) >= col_count) {
+  std::vector<Type> types;
+  std::vector<ColumnMeta> proj_metas;
+  types.reserve(projection.size());
+  proj_metas.reserve(projection.size());
+  for (int field : projection) {
+    if (field < 0 || static_cast<size_t>(field) >= metas.size()) {
       throw std::out_of_range("NativeColumnar: projection index out of range");
     }
-    const ColumnMeta &m = metas[field];
-    std::string stored;
-    if (!in.ReadAt(m.offset, m.stored_size, &stored)) {
-      throw std::runtime_error("NativeColumnar: truncated column page");
-    }
-    std::string encoded;
-    reg.Get(static_cast<CompressionId>(m.compression)).Decompress(Slice(stored), m.raw_size, &encoded);
-
-    Column col(schema[field].type);
-    reg.Get(static_cast<EncodingId>(m.encoding)).Decode(Slice(encoded), m.value_count, &col);
-    decoded_.push_back(std::move(col));
-  }
-}
-
-bool NativeColumnarReader::ReadRange(uint64_t first_row, uint64_t num_rows, Chunk *out) const {
-  if (first_row >= row_count_) {
-    return false;
-  }
-  const uint64_t n = std::min<uint64_t>(num_rows, row_count_ - first_row);
-  if (n == 0) {
-    return false;
+    types.push_back(schema_[field].type);
+    proj_metas.push_back(metas[field]);
   }
 
-  Chunk chunk;
-  chunk.column_ids = projection_;
-  chunk.row_count = n;
-  for (const Column &src : decoded_) {
-    Column col(src.type());
-    AppendRange(&col, src, static_cast<size_t>(first_row), static_cast<size_t>(n));
-    chunk.columns.push_back(std::move(col));
-  }
-  *out = std::move(chunk);
-  return true;
+  return std::make_unique<NativeColumnarFileReader>(std::move(in), projection, std::move(types), proj_metas, row_count);
 }
 
 std::unique_ptr<IBatchCursor> NativeColumnarFileFormat::Scan(IStorage &store, const std::vector<std::string> &files,
                                                              const std::vector<int> &projection) {
-  return std::make_unique<NativeColumnarCursor>(&store, schema_, files, projection, batch_rows_);
+  return std::make_unique<NativeColumnarCursor>(this, &store, files, projection, batch_rows_);
 }
 
 std::unique_ptr<IChunkWriter> NativeColumnarFileFormat::OpenWriter(IStorage &store, const std::string &path) {

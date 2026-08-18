@@ -51,12 +51,12 @@ TEST(NativeColumnarReadRangeTest, ReadRangeSubrangesMatchWhole) {
   const Schema schema = MakeSchema();
   const int64_t kN = 100;
   auto store = WriteFile(schema, "t.dbc", kN);
-  auto in = store->OpenInput("t.dbc");
-  ASSERT_NE(in, nullptr);
+  NativeColumnarFileFormat fmt(schema);
 
-  // Project {id(0), score(2)}.
-  NativeColumnarReader reader(*in, schema, {0, 2});
-  ASSERT_EQ(reader.row_count(), static_cast<uint64_t>(kN));
+  // Project {id(0), score(2)}. OpenReader reads the footer (metadata).
+  auto reader = fmt.OpenReader(*store, "t.dbc", {0, 2});
+  ASSERT_NE(reader, nullptr);
+  ASSERT_EQ(reader->row_count(), static_cast<uint64_t>(kN));
 
   // Concatenate a few sub-ranges and compare against a single full read.
   auto check_cell = [](const Chunk &c, size_t r, int64_t id) {
@@ -65,7 +65,7 @@ TEST(NativeColumnarReadRangeTest, ReadRangeSubrangesMatchWhole) {
   };
 
   Chunk full;
-  ASSERT_TRUE(reader.ReadRange(0, kN, &full));
+  ASSERT_TRUE(reader->ReadRange(0, kN, &full));
   ASSERT_EQ(full.row_count, static_cast<size_t>(kN));
   ASSERT_EQ(full.column_ids, (std::vector<int>{0, 2}));
   for (int64_t i = 0; i < kN; ++i) check_cell(full, i, i);
@@ -73,7 +73,7 @@ TEST(NativeColumnarReadRangeTest, ReadRangeSubrangesMatchWhole) {
   int64_t expected = 0;
   for (const std::pair<uint64_t, uint64_t> &win : {std::pair<uint64_t, uint64_t>{0, 30}, {30, 25}, {55, 45}}) {
     Chunk c;
-    ASSERT_TRUE(reader.ReadRange(win.first, win.second, &c));
+    ASSERT_TRUE(reader->ReadRange(win.first, win.second, &c));
     EXPECT_EQ(c.row_count, win.second);
     for (size_t r = 0; r < c.row_count; ++r) check_cell(c, r, expected++);
   }
@@ -81,10 +81,10 @@ TEST(NativeColumnarReadRangeTest, ReadRangeSubrangesMatchWhole) {
 
   // Clamping and out-of-range.
   Chunk tail;
-  ASSERT_TRUE(reader.ReadRange(90, 1000, &tail));  // clamps to 10
+  ASSERT_TRUE(reader->ReadRange(90, 1000, &tail));  // clamps to 10
   EXPECT_EQ(tail.row_count, 10u);
   Chunk none;
-  EXPECT_FALSE(reader.ReadRange(kN, 5, &none));  // at/after end -> empty
+  EXPECT_FALSE(reader->ReadRange(kN, 5, &none));  // at/after end -> empty
 }
 
 TEST(NativeColumnarReadRangeTest, BatchedCursorEqualsWhole) {

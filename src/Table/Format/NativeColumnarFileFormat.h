@@ -22,7 +22,7 @@
 #ifndef DBPLAYGROUND_NATIVECOLUMNARFILEFORMAT_H
 #define DBPLAYGROUND_NATIVECOLUMNARFILEFORMAT_H
 
-#include <cstdint>
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <utility>
@@ -30,33 +30,14 @@
 
 #include "Storage/Encoding/Codec.h"
 #include "Storage/File/IStorage.h"
-#include "Table/Chunk.h"
-#include "Table/Column.h"
 #include "Table/Format/IFileFormat.h"
 #include "Table/Schema.h"
 
 namespace dbplay {
 
-// R1 (docs/design/ColumnarReadPath.md): the positional read primitive for one
-// file. It parses the footer and decodes the projected columns up front (bounded
-// *output* per ReadRange; bounded *decode* arrives with row groups in R3), then
-// serves any row range by slicing the decoded columns.
-class NativeColumnarReader {
- public:
-  NativeColumnarReader(const IInputFile &in, const Schema &schema, std::vector<int> projection);
-
-  uint64_t row_count() const { return row_count_; }
-
-  // Fill *out with rows [first_row, first_row+num_rows) (num_rows clamped to the
-  // file end) of the projected columns. Returns false if the range is empty.
-  bool ReadRange(uint64_t first_row, uint64_t num_rows, Chunk *out) const;
-
- private:
-  std::vector<int> projection_;
-  std::vector<Column> decoded_;  // projected columns, fully decoded (one per projection entry)
-  uint64_t row_count_ = 0;
-};
-
+// Our column-major file format. The IFileReader impl and Scan cursor are
+// .cpp-private; callers go through OpenReader / Scan (see IFileFormat) and
+// docs/design/{NativeColumnarFileFormat,ColumnarReadPath}.md.
 class NativeColumnarFileFormat : public IFileFormat {
  public:
   // `compression` is the codec new files are WRITTEN with; reads always resolve
@@ -68,6 +49,9 @@ class NativeColumnarFileFormat : public IFileFormat {
       : schema_(std::move(schema)), write_compression_(compression), batch_rows_(batch_rows) {}
 
   const Schema &schema() const override { return schema_; }
+
+  std::unique_ptr<IFileReader> OpenReader(IStorage &store, const std::string &file,
+                                          const std::vector<int> &projection) override;
 
   std::unique_ptr<IBatchCursor> Scan(IStorage &store, const std::vector<std::string> &files,
                                      const std::vector<int> &projection) override;

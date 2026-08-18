@@ -49,6 +49,12 @@ class ICodec {
   // Decode `value_count` values from `bytes` and append them to *out (out must
   // already carry the target Type; matches RowCodec::DecodeInto's convention).
   virtual void Decode(const Slice &bytes, size_t value_count, Column *out) const = 0;
+
+  // Bytes per value if this encoding lays values out fixed-width and directly
+  // addressable (value i at base + i*width), else 0. Combined with an
+  // uncompressed page, a non-zero width lets a reader fetch/decode only the
+  // requested rows instead of the whole page (the direct-offset fast path).
+  virtual size_t FixedWidth(Type t) const = 0;
 };
 
 // Level 2: encoded bytes <-> stored bytes. Byte-blind (does not know Types).
