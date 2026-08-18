@@ -20,7 +20,10 @@
 - **Not yet** (aspirational in `StorageAbstraction.md`, not in the bytes below):
   multiple row groups, multiple pages per column, page/footer **statistics**,
   and **schema persisted in the file** (the reader gets the `Schema` from the
-  `NativeColumnarFileFormat` instance — persisting it is the catalog TODO).
+  `NativeColumnarFileFormat` instance — persisting it is the catalog TODO). The
+  evolution to a positional `ReadRange(first_row, num_rows, projection)` read
+  path, per-column direct-offset vs page-decode, and row groups + page index is
+  designed in [`ColumnarReadPath.md`](ColumnarReadPath.md).
 
 ## Conventions
 
