@@ -129,50 +129,63 @@ requested range.
 
 ## Build phases (each a testable increment)
 
-- **R1 — positional primitive + batched cursor (no layout change).**
-  Add `ReadRange(first_row, num_rows, projection)` over the current single-page
-  layout (decode the column page, `Slice` the range) and make the `ITableSource`
-  cursor stream `batch_rows`-sized `Chunk`s via repeated `ReadRange`. Gains range
-  scans + bounded **output** batches. (Decode is still whole-page here — bounded
-  *decode* comes in R3.) Test: `ReadRange` sub-ranges and batched full scan equal
-  the whole-file read.
-- **R2 — codec random-access capability + direct-offset fast path.**
-  Add `ICodec::FixedWidth(Type)`; for fixed-width + uncompressed columns,
-  `ReadRange` does a **partial page read** (`ReadAt` only the needed values) and
-  decodes only those. Test: fixed-width column range read touches only the
-  expected byte sub-range (spy `IStorage`), var-len/compressed falls back to
-  page-decode, results identical.
-- **R3 — multiple row groups + footer page index.**
-  Writer flushes a row group every `rows_per_group`; footer gains the page index
-  (`first_row`/offsets per (row group,column)). `Locate` reads only the pages
-  overlapping the range → **bounded decode** and true random access. Test:
-  random `ReadRange`s across many row groups; assert only the covering pages are
-  fetched.
-- **R4 — per-page stats + skipping (deferred to the expression engine).**
-  Footer stats (min/max/null_count) per page; the cursor skips pages a predicate
+- **R1 — positional primitive + batched cursor (no layout change) — DONE.**
+  `IFileReader` (`row_count()` + `ReadRange(first_row, num_rows)`) +
+  `IFileFormat::OpenReader` (where the footer/metadata is read, driven by `Scan`
+  per file). The `Scan` cursor streams `batch_rows`-sized `Chunk`s via repeated
+  `ReadRange` (`NativeColumnarFileFormat` gained a `batch_rows` knob). The reader
+  ctor does no page IO; it retains the `IInputFile`. Test:
+  `NativeColumnarReadRangeTest` (sub-ranges incl. clamp/past-end match a full
+  read; a `batch_rows=32` cursor yields 32,32,32,4 = the whole file).
+- **R2 — codec random-access capability + direct-offset fast path — DONE.**
+  `ICodec::FixedWidth(Type)`; the one encoding-dependent step is a `PageAccessor`
+  — universal `WholePageAccessor` (whole-page decode + memoize + slice) plus a
+  `FixedWidthDirectAccessor` (fixed-width + uncompressed → read only the
+  requested values' bytes). `MakeAccessor` chooses once per page; `ReadRange` only
+  calls `PageAccessor::ReadRows` (no encoding branches). Test:
+  `NativeColumnarFastPathTest` (spy `IStorage`) — a fixed-width uncompressed
+  column reads ~`count*width` bytes for a small range; var-len / compressed fall
+  back to a whole-page read; results identical.
+- **R3 — multiple row groups + footer page index — OPTIONAL / deferred.**
+  Reframed: "row group" is realized today as **one file = one row group** over
+  the multi-file `Scan(files...)` (file-level bounded write memory, skipping,
+  parallelism). Intra-file row groups only add value for individually-large
+  files. When needed: writer flushes a row group every `rows_per_group`; footer
+  gains a page index (`first_row`/offsets per (row group, column)); `Locate`
+  reads only the pages overlapping the range → **bounded decode**. The
+  `PageAccessor` layer is unchanged; only `Locate` generalizes from "the single
+  page" to "index lookup".
+- **R4 — per-page/-group stats + skipping (deferred to the expression engine).**
+  Stats (min/max/null_count) per unit; the cursor skips units a predicate
   excludes. Predicate representation/evaluation comes from
   [`ExpressionEngine.md`](ExpressionEngine.md); this phase only wires the
-  skip-list into `Locate`.
+  skip-list into `Locate`. (At one-file-per-group granularity the stats live in a
+  catalog/manifest — the Table Format layer in `StorageAbstraction.md`.)
 
-R1/R2 change no file bytes (pure reader/cursor evolution); R3 changes the footer
-(new format version — bump the magic or a version field in the header). All are
-additive to the `ITableSource` seam — the query layer is untouched.
+R1/R2 changed no file bytes (pure reader/cursor evolution). R3 would change the
+footer (new format version). All are additive to the `ITableSource` seam — the
+query layer is untouched.
 
-## Decisions (proposed) and open
+## Decisions (settled) and open
 
-Proposed:
+Settled:
 1. File primitive is **positional** `ReadRange(first_row, num_rows, projection)`;
-   the public seam stays a streaming cursor built on it.
-2. "page-decode vs direct-offset" is a **per-column codec capability**
-   (`FixedWidth`), gated by `compression == None`; not encoding-specific branches
-   in the reader.
-3. Row group + footer page index are the granularity for both bounded random
-   access and predicate skipping; introduced together in R3.
+   the public seam stays a streaming cursor built on it. (R1)
+2. Per-file **metadata is read in `IFileFormat::OpenReader`** (driven by `Scan`,
+   lazily per file), not in a reader constructor; the reader retains the file and
+   reads column pages lazily in `ReadRange`. (R1 refactor)
+3. "page-decode vs direct-offset" is a **per-column codec capability**
+   (`FixedWidth`), gated by `compression == None`, behind one `PageAccessor`
+   method — no encoding-specific branches in the reader. (R2)
+4. **Row group is a logical unit** = write-memory bound + read working-set bound
+   + skip granularity + parallel unit; realized as one-file-per-group today, or
+   intra-file groups later (R3). Either way `Locate → PageAccessor::ReadRows →
+   assemble` is unchanged.
 
 Open:
-- **Bounded decode before R3**: until row groups exist, `ReadRange` must decode a
-  whole column page even for a small range (var-len/compressed). Acceptable
-  interim; R3 fixes it.
+- **Bounded decode for large single files**: until intra-file row groups (R3),
+  the whole-page path decodes a whole column page even for a small range
+  (var-len/compressed). Mitigated by keeping files modest (one-file-per-group).
 - Nulls/validity interact with `value_count` vs row positions (def-levels); still
   deferred (see `StorageAbstraction.md`).
 - Choosing `rows_per_group` / page size (a size vs. skip-granularity trade-off).
