@@ -228,6 +228,11 @@ column by id), not a member the row path shares.
 
 ### Native columnar file layout (Parquet-lite)
 
+> The **byte-exact** layout of what was actually built (single row group, one
+> page per column, `DBC1` magic, footer) is specified in
+> [`NativeColumnarFileFormat.md`](NativeColumnarFileFormat.md). The sketch below
+> is the aspirational target (row groups, multi-page, stats).
+
 ```
 File = [Header]
        [Row Group 0 .. N]                    horizontal row slices -> batch/parallel
