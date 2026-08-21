@@ -1,8 +1,9 @@
 # Cloud Table Layering: Catalog, Metadata, Files, and Cache
 
-> Status: **分阶段实现中**。`IMetadataStore`、内存 CAS、`TableState` / `CommitRecord`
-> codec，以及 `TableMetadataStore` 的 CURRENT 基础协议已经落地；WAL publish、snapshot 和
-> S3 adapter 尚未实现。
+> Status: **分阶段实现中**。`IMetadataStore`、内存 CAS、`TableState` / `CommitRecord` codec、
+> `TableMetadataStore`、WAL publish 编排、snapshot loader 与 `CloudTableSource` 框架已经落地；
+> 生产级 WAL/manifest/S3/Catalog/router/RPC adapter 尚未实现。完整调用路径见
+> [`CloudImportQueryFramework.md`](CloudImportQueryFramework.md)。
 >
 > 本文在 [`HighCardinalityMultiTenantObservability.md`](HighCardinalityMultiTenantObservability.md)
 > 的 workload 与一致性模型之上，确定 Cloud Table 的软件分层。核心原则是：
