@@ -196,6 +196,31 @@ TEST(TableMetadataStoreTest, OldWriterIsFencedAfterNewEpochIsAcquired) {
   EXPECT_EQ(tables.Load()->state.writer_epoch, new_writer.state.writer_epoch);
 }
 
+TEST(TableMetadataStoreTest, CommittedResponseCanBeRecoveredAfterEpochAdvances) {
+  auto metadata = std::make_shared<MemMetadataStore>();
+  TableMetadataStore tables("table-a", "tables/table-a", metadata);
+  ASSERT_EQ(tables.Initialize(tables.NewTableState()), InitializeTableResult::Created);
+
+  VersionedTableState writer;
+  ASSERT_EQ(tables.AcquireWriter(*tables.Load(), &writer), AcquireWriterResult::Acquired);
+  CommitRecord record;
+  record.table_id = "table-a";
+  record.writer_epoch = writer.state.writer_epoch;
+  record.first_cursor = 1;
+  record.last_cursor = 1;
+  record.wal_files = {"wal/1.wal"};
+  record.batch_ids = {"batch-1"};
+  ASSERT_EQ(tables.PublishWal(writer, "commit/1.meta", record), PublishWalResult::Committed);
+
+  VersionedTableState next_writer;
+  ASSERT_EQ(tables.AcquireWriter(*tables.Load(), &next_writer), AcquireWriterResult::Acquired);
+  EXPECT_GT(next_writer.state.writer_epoch, writer.state.writer_epoch);
+
+  VersionedTableState recovered;
+  EXPECT_EQ(tables.PublishWal(writer, "commit/1.meta", record, &recovered), PublishWalResult::AlreadyCommitted);
+  EXPECT_EQ(recovered.state.writer_epoch, next_writer.state.writer_epoch);
+}
+
 TEST(TableMetadataStoreTest, ReusedCommitKeyMustContainIdenticalRecord) {
   auto metadata = std::make_shared<MemMetadataStore>();
   TableMetadataStore tables("table-a", "tables/table-a", metadata);

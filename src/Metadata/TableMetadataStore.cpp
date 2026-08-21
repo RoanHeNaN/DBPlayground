@@ -179,14 +179,14 @@ PublishWalResult TableMetadataStore::PublishWal(const VersionedTableState &expec
   if (!current.has_value()) {
     return PublishWalResult::RetryableConflict;
   }
-  if (current->state.writer_epoch != expected.state.writer_epoch) {
-    return PublishWalResult::Fenced;
-  }
   if (current->state.commit_head == commit_key && current->state.committed_cursor == record.last_cursor) {
     if (published != nullptr) {
       *published = *current;
     }
     return PublishWalResult::AlreadyCommitted;
+  }
+  if (current->state.writer_epoch != expected.state.writer_epoch) {
+    return PublishWalResult::Fenced;
   }
   return PublishWalResult::RebaseRequired;
 }
