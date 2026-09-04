@@ -27,12 +27,6 @@ struct TableDescriptor {
   Schema schema;
 };
 
-struct BaseManifest {
-  std::string table_id;
-  uint64_t indexed_cursor = 0;
-  std::vector<std::string> data_files;
-};
-
 struct TableSnapshot {
   MetadataVersion metadata_version;
   uint64_t state_version = 0;
@@ -75,6 +69,14 @@ enum class CloudWriterStartCode { Started, Contended, RetryableConflict, Invalid
 struct CloudWriterStartResult {
   CloudWriterStartCode code = CloudWriterStartCode::InvalidTable;
   uint64_t writer_epoch = 0;
+};
+
+enum class CloudCompactCode { Compacted, AlreadyPublished, NothingToDo, RetryableConflict, InvalidState };
+
+struct CloudCompactResult {
+  CloudCompactCode code = CloudCompactCode::InvalidState;
+  uint64_t indexed_cursor = 0;
+  uint64_t committed_cursor = 0;
 };
 
 struct WriterTarget {

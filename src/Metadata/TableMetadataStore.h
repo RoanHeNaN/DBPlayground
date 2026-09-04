@@ -26,6 +26,14 @@ enum class PublishWalResult {
   RetryableConflict,
   InvalidCommit
 };
+enum class PublishCompactionResult {
+  Published,
+  AlreadyPublished,
+  StaleVersion,
+  RetryableConflict,
+  ManifestKeyCollision,
+  InvalidManifest
+};
 
 // Implements the table-level CURRENT protocol on top of a versioned metadata
 // key/value store. It owns logical transition validation, but not WAL/DBC1 IO.
@@ -43,13 +51,16 @@ class TableMetadataStore {
   AcquireWriterResult AcquireWriter(const VersionedTableState &expected, VersionedTableState *acquired = nullptr);
   PublishWalResult PublishWal(const VersionedTableState &expected, const std::string &commit_key,
                               const CommitRecord &record, VersionedTableState *published = nullptr);
+  PublishCompactionResult PublishCompaction(const VersionedTableState &expected, const std::string &manifest_key,
+                                            const BaseManifest &manifest, VersionedTableState *published = nullptr);
 
   std::optional<CommitRecord> LoadCommitRecord(const std::string &commit_key) const;
+  std::optional<BaseManifest> LoadManifest(const std::string &manifest_key) const;
 
  private:
   bool IsValidInitialState(const TableState &state) const;
   bool IsValidTransition(const TableState &previous, const TableState &next) const;
-  std::string ResolveCommitKey(const std::string &commit_key) const;
+  std::string ResolveRelativeKey(const std::string &relative_key, const char *required_prefix) const;
 
   std::string table_id_;
   std::string metadata_prefix_;

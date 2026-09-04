@@ -2,6 +2,7 @@
 
 #include <limits>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 #include "Metadata/TableMetadataCodec.h"
@@ -116,7 +117,7 @@ PublishWalResult TableMetadataStore::PublishWal(const VersionedTableState &expec
 
   std::string resolved_key;
   try {
-    resolved_key = ResolveCommitKey(commit_key);
+    resolved_key = ResolveRelativeKey(commit_key, "commit/");
   } catch (const std::invalid_argument &) {
     return PublishWalResult::InvalidCommit;
   }
@@ -191,8 +192,99 @@ PublishWalResult TableMetadataStore::PublishWal(const VersionedTableState &expec
   return PublishWalResult::RebaseRequired;
 }
 
+PublishCompactionResult TableMetadataStore::PublishCompaction(const VersionedTableState &expected,
+                                                              const std::string &manifest_key,
+                                                              const BaseManifest &manifest,
+                                                              VersionedTableState *published) {
+  if (expected.state.format_version != TableState::kFormatVersion || expected.state.table_id != table_id_ ||
+      manifest.format_version != BaseManifest::kFormatVersion || manifest.table_id != table_id_ ||
+      manifest.indexed_cursor == 0 || manifest.indexed_cursor <= expected.state.indexed_cursor ||
+      manifest.indexed_cursor > expected.state.committed_cursor || manifest.data_files.empty()) {
+    return PublishCompactionResult::InvalidManifest;
+  }
+
+  std::string resolved_key;
+  try {
+    resolved_key = ResolveRelativeKey(manifest_key, "manifest/");
+  } catch (const std::invalid_argument &) {
+    return PublishCompactionResult::InvalidManifest;
+  }
+
+  std::string encoded_manifest;
+  try {
+    encoded_manifest = TableMetadataCodec::EncodeBaseManifest(manifest);
+  } catch (const std::invalid_argument &) {
+    return PublishCompactionResult::InvalidManifest;
+  }
+  switch (metadata_->PutIfAbsent(resolved_key, Slice(encoded_manifest), nullptr)) {
+    case ConditionalWriteResult::Applied:
+      break;
+    case ConditionalWriteResult::PreconditionFailed: {
+      const auto existing = metadata_->Get(resolved_key);
+      if (!existing.has_value()) {
+        return PublishCompactionResult::RetryableConflict;
+      }
+      BaseManifest decoded;
+      try {
+        decoded = TableMetadataCodec::DecodeBaseManifest(Slice(existing->value));
+      } catch (const std::invalid_argument &) {
+        return PublishCompactionResult::ManifestKeyCollision;
+      }
+      if (decoded != manifest) {
+        return PublishCompactionResult::ManifestKeyCollision;
+      }
+      break;
+    }
+    case ConditionalWriteResult::RetryableConflict:
+      return PublishCompactionResult::RetryableConflict;
+  }
+
+  TableState next = expected.state;
+  if (next.state_version == std::numeric_limits<uint64_t>::max()) {
+    return PublishCompactionResult::InvalidManifest;
+  }
+  ++next.state_version;
+  next.indexed_cursor = manifest.indexed_cursor;
+  next.base_manifest = manifest_key;
+  if (!IsValidTransition(expected.state, next)) {
+    return PublishCompactionResult::InvalidManifest;
+  }
+
+  const std::string encoded_state = TableMetadataCodec::EncodeTableState(next);
+  MetadataVersion version;
+  switch (metadata_->CompareExchange(current_key_, expected.metadata_version, Slice(encoded_state), &version)) {
+    case ConditionalWriteResult::Applied:
+      if (published != nullptr) {
+        *published = VersionedTableState{std::move(next), std::move(version)};
+      }
+      return PublishCompactionResult::Published;
+    case ConditionalWriteResult::RetryableConflict:
+      return PublishCompactionResult::RetryableConflict;
+    case ConditionalWriteResult::PreconditionFailed:
+      break;
+  }
+
+  const auto current = Load();
+  if (!current.has_value()) {
+    return PublishCompactionResult::RetryableConflict;
+  }
+  if (current->state.base_manifest == manifest_key && current->state.indexed_cursor == manifest.indexed_cursor) {
+    if (published != nullptr) {
+      *published = *current;
+    }
+    return PublishCompactionResult::AlreadyPublished;
+  }
+  if (current->state.indexed_cursor >= manifest.indexed_cursor) {
+    if (published != nullptr) {
+      *published = *current;
+    }
+    return PublishCompactionResult::AlreadyPublished;
+  }
+  return PublishCompactionResult::StaleVersion;
+}
+
 std::optional<CommitRecord> TableMetadataStore::LoadCommitRecord(const std::string &commit_key) const {
-  const auto value = metadata_->Get(ResolveCommitKey(commit_key));
+  const auto value = metadata_->Get(ResolveRelativeKey(commit_key, "commit/"));
   if (!value.has_value()) {
     return std::nullopt;
   }
@@ -201,6 +293,18 @@ std::optional<CommitRecord> TableMetadataStore::LoadCommitRecord(const std::stri
     throw std::runtime_error("TableMetadataStore: commit record belongs to another table");
   }
   return record;
+}
+
+std::optional<BaseManifest> TableMetadataStore::LoadManifest(const std::string &manifest_key) const {
+  const auto value = metadata_->Get(ResolveRelativeKey(manifest_key, "manifest/"));
+  if (!value.has_value()) {
+    return std::nullopt;
+  }
+  BaseManifest manifest = TableMetadataCodec::DecodeBaseManifest(Slice(value->value));
+  if (manifest.table_id != table_id_) {
+    throw std::runtime_error("TableMetadataStore: base manifest belongs to another table");
+  }
+  return manifest;
 }
 
 bool TableMetadataStore::IsValidInitialState(const TableState &state) const {
@@ -225,23 +329,25 @@ bool TableMetadataStore::IsValidTransition(const TableState &previous, const Tab
   return true;
 }
 
-std::string TableMetadataStore::ResolveCommitKey(const std::string &commit_key) const {
-  if (commit_key.size() <= 7 || commit_key.compare(0, 7, "commit/") != 0 || commit_key.back() == '/') {
-    throw std::invalid_argument("TableMetadataStore: invalid commit key");
+std::string TableMetadataStore::ResolveRelativeKey(const std::string &relative_key, const char *required_prefix) const {
+  const size_t prefix_len = std::char_traits<char>::length(required_prefix);
+  if (relative_key.size() <= prefix_len || relative_key.compare(0, prefix_len, required_prefix) != 0 ||
+      relative_key.back() == '/') {
+    throw std::invalid_argument("TableMetadataStore: invalid relative key");
   }
   size_t begin = 0;
-  while (begin < commit_key.size()) {
-    const size_t end = commit_key.find('/', begin);
-    const std::string component = commit_key.substr(begin, end == std::string::npos ? end : end - begin);
+  while (begin < relative_key.size()) {
+    const size_t end = relative_key.find('/', begin);
+    const std::string component = relative_key.substr(begin, end == std::string::npos ? end : end - begin);
     if (component.empty() || component == "." || component == "..") {
-      throw std::invalid_argument("TableMetadataStore: invalid commit key");
+      throw std::invalid_argument("TableMetadataStore: invalid relative key");
     }
     if (end == std::string::npos) {
       break;
     }
     begin = end + 1;
   }
-  return metadata_prefix_ + "/" + commit_key;
+  return metadata_prefix_ + "/" + relative_key;
 }
 
 }  // namespace dbplay

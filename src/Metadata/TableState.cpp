@@ -15,4 +15,9 @@ bool CommitRecord::operator==(const CommitRecord &other) const {
          parent_commit == other.parent_commit && wal_files == other.wal_files && batch_ids == other.batch_ids;
 }
 
+bool BaseManifest::operator==(const BaseManifest &other) const {
+  return format_version == other.format_version && table_id == other.table_id &&
+         indexed_cursor == other.indexed_cursor && data_files == other.data_files;
+}
+
 }  // namespace dbplay

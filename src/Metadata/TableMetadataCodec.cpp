@@ -13,6 +13,7 @@ namespace {
 
 constexpr std::array<char, 4> kTableStateMagic{'D', 'B', 'T', 'S'};
 constexpr std::array<char, 4> kCommitRecordMagic{'D', 'B', 'C', 'R'};
+constexpr std::array<char, 4> kBaseManifestMagic{'D', 'B', 'B', 'M'};
 constexpr uint32_t kCodecVersion = 1;
 
 class Writer {
@@ -143,6 +144,23 @@ void ValidateTableState(const TableState &state) {
   }
 }
 
+void ValidateBaseManifest(const BaseManifest &manifest) {
+  if (manifest.format_version != BaseManifest::kFormatVersion) {
+    throw std::invalid_argument("TableMetadataCodec: unsupported BaseManifest format version");
+  }
+  if (manifest.table_id.empty()) {
+    throw std::invalid_argument("TableMetadataCodec: BaseManifest table_id is empty");
+  }
+  if (manifest.indexed_cursor == 0 || manifest.data_files.empty()) {
+    throw std::invalid_argument("TableMetadataCodec: BaseManifest has no indexed data files");
+  }
+  for (const auto &data_file : manifest.data_files) {
+    if (data_file.empty()) {
+      throw std::invalid_argument("TableMetadataCodec: BaseManifest has an empty data file");
+    }
+  }
+}
+
 void ValidateCommitRecord(const CommitRecord &record) {
   if (record.format_version != CommitRecord::kFormatVersion) {
     throw std::invalid_argument("TableMetadataCodec: unsupported CommitRecord format version");
@@ -244,6 +262,30 @@ CommitRecord TableMetadataCodec::DecodeCommitRecord(const Slice &bytes) {
   reader.ExpectEnd();
   ValidateCommitRecord(record);
   return record;
+}
+
+std::string TableMetadataCodec::EncodeBaseManifest(const BaseManifest &manifest) {
+  ValidateBaseManifest(manifest);
+  Writer writer;
+  WriteHeader(&writer, kBaseManifestMagic);
+  writer.U32(manifest.format_version);
+  writer.String(manifest.table_id);
+  writer.U64(manifest.indexed_cursor);
+  writer.Strings(manifest.data_files);
+  return writer.Finish();
+}
+
+BaseManifest TableMetadataCodec::DecodeBaseManifest(const Slice &bytes) {
+  Reader reader(bytes);
+  ReadHeader(&reader, kBaseManifestMagic);
+  BaseManifest manifest;
+  manifest.format_version = reader.U32();
+  manifest.table_id = reader.String();
+  manifest.indexed_cursor = reader.U64();
+  manifest.data_files = reader.Strings();
+  reader.ExpectEnd();
+  ValidateBaseManifest(manifest);
+  return manifest;
 }
 
 }  // namespace dbplay

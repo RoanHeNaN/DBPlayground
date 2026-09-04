@@ -12,6 +12,8 @@ class IObjectKeyGenerator {
   virtual ~IObjectKeyGenerator() = default;
   virtual std::string NewWalKey(const std::string &table_id) = 0;
   virtual std::string NewCommitKey(const std::string &table_id) = 0;
+  virtual std::string NewDataFileKey(const std::string &table_id) = 0;
+  virtual std::string NewManifestKey(const std::string &table_id) = 0;
 };
 
 }  // namespace dbplay

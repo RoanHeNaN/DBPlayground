@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include <utility>
 
+#include "Cloud/CloudTableCompactor.h"
 #include "Cloud/CloudValidation.h"
 
 namespace dbplay {
@@ -43,6 +44,12 @@ std::unique_ptr<CloudTableWriter> CloudTable::NewWriter(std::shared_ptr<IObjectK
                                                         size_t max_publish_attempts) const {
   return std::make_unique<CloudTableWriter>(descriptor_, files_, metadata_, wal_format_, std::move(keys),
                                             std::move(batches), max_publish_attempts);
+}
+
+std::unique_ptr<CloudTableCompactor> CloudTable::NewCompactor(std::shared_ptr<IObjectKeyGenerator> keys,
+                                                              size_t max_publish_attempts) const {
+  return std::make_unique<CloudTableCompactor>(descriptor_, files_, metadata_, base_format_, wal_format_,
+                                               std::move(keys), max_publish_attempts);
 }
 
 }  // namespace dbplay

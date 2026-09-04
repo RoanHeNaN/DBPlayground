@@ -18,6 +18,9 @@ class TableMetadataCodec {
 
   static std::string EncodeCommitRecord(const CommitRecord &record);
   static CommitRecord DecodeCommitRecord(const Slice &bytes);
+
+  static std::string EncodeBaseManifest(const BaseManifest &manifest);
+  static BaseManifest DecodeBaseManifest(const Slice &bytes);
 };
 
 }  // namespace dbplay

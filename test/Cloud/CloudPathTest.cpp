@@ -13,12 +13,14 @@
 #include "Cloud/IManifestStore.h"
 #include "Cloud/IObjectKeyGenerator.h"
 #include "Cloud/IWriterRouting.h"
+#include "Cloud/MetadataManifestStore.h"
 #include "Execution/ScanExecutor.h"
 #include "Metadata/MemMetadataStore.h"
 #include "Metadata/TableMetadataCodec.h"
 #include "Storage/File/IStorage.h"
 #include "Storage/File/MemStorage.h"
 #include "Table/Format/NativeColumnarFileFormat.h"
+#include "Table/Format/WalFileFormat.h"
 #include "gtest/gtest.h"
 
 namespace dbplay {
@@ -80,14 +82,20 @@ class FixedManifestStore : public IManifestStore {
 
 class SequenceKeys : public IObjectKeyGenerator {
  public:
-  std::string NewWalKey(const std::string &) override { return "wal/" + std::to_string(next_wal_++) + ".dbc1"; }
+  std::string NewWalKey(const std::string &) override { return "wal/" + std::to_string(next_wal_++) + ".wal"; }
   std::string NewCommitKey(const std::string &) override {
     return "commit/" + std::to_string(next_commit_++) + ".meta";
+  }
+  std::string NewDataFileKey(const std::string &) override { return "data/" + std::to_string(next_data_++) + ".dbc1"; }
+  std::string NewManifestKey(const std::string &) override {
+    return "manifest/" + std::to_string(next_manifest_++) + ".meta";
   }
 
  private:
   std::atomic<uint64_t> next_wal_{1};
   std::atomic<uint64_t> next_commit_{1};
+  std::atomic<uint64_t> next_data_{1};
+  std::atomic<uint64_t> next_manifest_{1};
 };
 
 class NeverCommittedBatches : public IBatchCommitResolver {
@@ -183,11 +191,12 @@ TEST(CloudPathTest, ImportIsImmediatelyVisibleWithoutListAndSnapshotsAreImmutabl
 
   auto files = std::make_shared<NoListStorage>();
   auto metadata = std::make_shared<MemMetadataStore>();
-  auto manifests = std::make_shared<EmptyManifestStore>();
-  auto format = std::make_shared<NativeColumnarFileFormat>(descriptor.schema);
+  auto manifests = std::make_shared<MetadataManifestStore>(descriptor.table_id, descriptor.metadata_prefix, metadata);
+  auto base_format = std::make_shared<NativeColumnarFileFormat>(descriptor.schema);
+  auto wal_format = std::make_shared<WalFileFormat>(descriptor.schema);
   auto keys = std::make_shared<SequenceKeys>();
   auto batches = std::make_shared<NeverCommittedBatches>();
-  auto table = std::make_shared<CloudTable>(descriptor, files, metadata, manifests, format, format);
+  auto table = std::make_shared<CloudTable>(descriptor, files, metadata, manifests, base_format, wal_format);
 
   auto coordinator = std::make_shared<WriterCoordinator>(table->NewWriter(keys, batches));
   ASSERT_EQ(coordinator->Start().code, CloudWriterStartCode::Started);
@@ -231,6 +240,31 @@ TEST(CloudPathTest, ImportIsImmediatelyVisibleWithoutListAndSnapshotsAreImmutabl
   EXPECT_EQ(latest_rows[0][0].AsInt64(), 0);
   EXPECT_EQ(latest_rows[3][0].AsInt64(), 100);
   EXPECT_EQ(latest_rows[5][0].AsInt64(), 200);
+
+  const auto compacted = table->NewCompactor(keys)->Compact();
+  ASSERT_EQ(compacted.code, CloudCompactCode::Compacted);
+  EXPECT_EQ(compacted.indexed_cursor, 2u);
+  EXPECT_EQ(compacted.committed_cursor, 2u);
+
+  CloudImportBatch third;
+  third.batch_ids = {"client-4"};
+  third.chunks = {MakeChunk(300, 1)};
+  ASSERT_EQ(importer.Import({"observability", "events"}, third).code, CloudImportCode::Committed);
+
+  auto after_compact = queries.Open({"observability", "events"});
+  ASSERT_NE(after_compact, nullptr);
+  auto after_compact_rows = CollectProjected(*after_compact, {0});
+  ASSERT_EQ(after_compact_rows.size(), 7u);
+  EXPECT_EQ(after_compact_rows[0][0].AsInt64(), 0);
+  EXPECT_EQ(after_compact_rows[5][0].AsInt64(), 200);
+  EXPECT_EQ(after_compact_rows[6][0].AsInt64(), 300);
+
+  const auto snapshot = table->LoadSnapshot();
+  ASSERT_TRUE(snapshot.has_value());
+  EXPECT_EQ(snapshot->indexed_cursor, 2u);
+  EXPECT_EQ(snapshot->committed_cursor, 3u);
+  EXPECT_EQ(snapshot->data_files.size(), 1u);
+  EXPECT_EQ(snapshot->wal_files.size(), 1u);
 }
 
 TEST(CloudPathTest, MissingCatalogEntriesFailBeforeRoutingOrOpeningStorage) {
@@ -271,15 +305,16 @@ TEST(CloudPathTest, QueryCombinesCompactedBaseWithCommittedWalTail) {
   descriptor.schema = TestSchema();
 
   const std::string base_file = descriptor.file_prefix + "/data/base-1.dbc1";
-  const std::string wal_file = descriptor.file_prefix + "/wal/2.dbc1";
+  const std::string wal_file = descriptor.file_prefix + "/wal/2.wal";
   const std::string manifest_key = "manifest/base-1.meta";
   const std::string commit_key = "commit/2.meta";
 
   auto files = std::make_shared<NoListStorage>();
   auto metadata = std::make_shared<MemMetadataStore>();
-  auto format = std::make_shared<NativeColumnarFileFormat>(descriptor.schema);
-  WriteFile(*format, *files, base_file, MakeChunk(0, 2));
-  WriteFile(*format, *files, wal_file, MakeChunk(100, 2));
+  auto base_format = std::make_shared<NativeColumnarFileFormat>(descriptor.schema);
+  auto wal_format = std::make_shared<WalFileFormat>(descriptor.schema);
+  WriteFile(*base_format, *files, base_file, MakeChunk(0, 2));
+  WriteFile(*wal_format, *files, wal_file, MakeChunk(100, 2));
 
   BaseManifest manifest;
   manifest.table_id = descriptor.table_id;
@@ -310,7 +345,7 @@ TEST(CloudPathTest, QueryCombinesCompactedBaseWithCommittedWalTail) {
   ASSERT_EQ(metadata->PutIfAbsent(descriptor.metadata_prefix + "/CURRENT", Slice(encoded_state), nullptr),
             ConditionalWriteResult::Applied);
 
-  CloudTable table(descriptor, files, metadata, manifests, format, format);
+  CloudTable table(descriptor, files, metadata, manifests, base_format, wal_format);
   auto source = table.OpenSnapshot();
   ASSERT_NE(source, nullptr);
   auto rows = CollectProjected(*source, {0});
@@ -331,9 +366,10 @@ TEST(CloudPathTest, OldCloudWriterStopsAfterAnotherWriterAcquiresTheTable) {
   auto files = std::make_shared<NoListStorage>();
   auto metadata = std::make_shared<MemMetadataStore>();
   auto manifests = std::make_shared<EmptyManifestStore>();
-  auto format = std::make_shared<NativeColumnarFileFormat>(descriptor.schema);
+  auto base_format = std::make_shared<NativeColumnarFileFormat>(descriptor.schema);
+  auto wal_format = std::make_shared<WalFileFormat>(descriptor.schema);
   auto batches = std::make_shared<NeverCommittedBatches>();
-  CloudTable table(descriptor, files, metadata, manifests, format, format);
+  CloudTable table(descriptor, files, metadata, manifests, base_format, wal_format);
 
   auto old_writer = table.NewWriter(std::make_shared<SequenceKeys>(), batches);
   ASSERT_EQ(old_writer->Start().code, CloudWriterStartCode::Started);

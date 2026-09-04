@@ -45,6 +45,20 @@ struct CommitRecord {
   bool operator!=(const CommitRecord &other) const { return !(*this == other); }
 };
 
+// Immutable base-file set covering rows through indexed_cursor. CURRENT stores
+// only the manifest key; snapshot loading reads this object by that known key.
+struct BaseManifest {
+  static constexpr uint32_t kFormatVersion = 1;
+
+  uint32_t format_version = kFormatVersion;
+  std::string table_id;
+  uint64_t indexed_cursor = 0;
+  std::vector<std::string> data_files;
+
+  bool operator==(const BaseManifest &other) const;
+  bool operator!=(const BaseManifest &other) const { return !(*this == other); }
+};
+
 }  // namespace dbplay
 
 #endif  // DBPLAYGROUND_TABLESTATE_H

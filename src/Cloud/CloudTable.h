@@ -5,6 +5,7 @@
 #include <memory>
 #include <optional>
 
+#include "Cloud/CloudTableCompactor.h"
 #include "Cloud/CloudTableSource.h"
 #include "Cloud/CloudTableWriter.h"
 #include "Cloud/CloudTypes.h"
@@ -34,6 +35,8 @@ class CloudTable {
   std::unique_ptr<CloudTableWriter> NewWriter(std::shared_ptr<IObjectKeyGenerator> keys,
                                               std::shared_ptr<IBatchCommitResolver> batches,
                                               size_t max_publish_attempts = 4) const;
+  std::unique_ptr<CloudTableCompactor> NewCompactor(std::shared_ptr<IObjectKeyGenerator> keys,
+                                                    size_t max_publish_attempts = 4) const;
 
  private:
   TableDescriptor descriptor_;
