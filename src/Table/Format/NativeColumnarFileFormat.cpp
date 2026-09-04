@@ -50,14 +50,27 @@ uint64_t GetU64(const char *&p) {
 void AppendRange(Column *dst, const Column &src, size_t start, size_t count) {
   const size_t end = start + count;
   switch (dst->type()) {
-    case Type::Int32:  for (size_t i = start; i < end; ++i) dst->Append<int32_t>(src.Get<int32_t>(i)); break;
-    case Type::Int64:  for (size_t i = start; i < end; ++i) dst->Append<int64_t>(src.Get<int64_t>(i)); break;
-    case Type::Float:  for (size_t i = start; i < end; ++i) dst->Append<float>(src.Get<float>(i)); break;
-    case Type::Double: for (size_t i = start; i < end; ++i) dst->Append<double>(src.Get<double>(i)); break;
-    case Type::Bool:   for (size_t i = start; i < end; ++i) dst->Append<bool>(src.Get<bool>(i)); break;
+    case Type::Int32:
+      for (size_t i = start; i < end; ++i) dst->Append<int32_t>(src.Get<int32_t>(i));
+      break;
+    case Type::Int64:
+      for (size_t i = start; i < end; ++i) dst->Append<int64_t>(src.Get<int64_t>(i));
+      break;
+    case Type::Float:
+      for (size_t i = start; i < end; ++i) dst->Append<float>(src.Get<float>(i));
+      break;
+    case Type::Double:
+      for (size_t i = start; i < end; ++i) dst->Append<double>(src.Get<double>(i));
+      break;
+    case Type::Bool:
+      for (size_t i = start; i < end; ++i) dst->Append<bool>(src.Get<bool>(i));
+      break;
     case Type::String:
-    case Type::Blob:   for (size_t i = start; i < end; ++i) dst->AppendBytes(src.GetBytes(i)); break;
-    default:           throw std::invalid_argument("NativeColumnar: invalid column type");
+    case Type::Blob:
+      for (size_t i = start; i < end; ++i) dst->AppendBytes(src.GetBytes(i));
+      break;
+    default:
+      throw std::invalid_argument("NativeColumnar: invalid column type");
   }
 }
 
@@ -210,11 +223,11 @@ class NativeColumnarFileReader : public IFileReader {
   }
 
  private:
-  std::unique_ptr<IInputFile> in_;                          // retained; accessors reference it
-  std::vector<int> projection_;                             // schema field ids, output order
-  std::vector<Type> types_;                                 // parallel to projection_
+  std::unique_ptr<IInputFile> in_;  // retained; accessors reference it
+  std::vector<int> projection_;     // schema field ids, output order
+  std::vector<Type> types_;         // parallel to projection_
   uint64_t row_count_;
-  std::vector<std::unique_ptr<PageAccessor>> accessors_;    // parallel to projection_
+  std::vector<std::unique_ptr<PageAccessor>> accessors_;  // parallel to projection_
 };
 
 // ---- writer: buffers full columns, seals the file on Close() ----
@@ -339,7 +352,7 @@ class NativeColumnarCursor : public IBatchCursor {
 }  // namespace
 
 std::unique_ptr<IFileReader> NativeColumnarFileFormat::OpenReader(IStorage &store, const std::string &file,
-                                                                 const std::vector<int> &projection) {
+                                                                  const std::vector<int> &projection) {
   auto in = store.OpenInput(file);
   if (in == nullptr) {
     return nullptr;

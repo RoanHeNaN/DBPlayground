@@ -62,9 +62,9 @@ TEST(RowTableSourceTest, ScanWithProjectionAndBatching) {
   Chunk chunk;
   while (cursor->Next(&chunk)) {
     ++chunks;
-    ASSERT_EQ(chunk.columns.size(), 2u);              // only projected columns
+    ASSERT_EQ(chunk.columns.size(), 2u);  // only projected columns
     EXPECT_EQ(chunk.column_ids, (std::vector<int>{0, 2}));
-    EXPECT_EQ(chunk.columns[0].type(), Type::Int64);  // id
+    EXPECT_EQ(chunk.columns[0].type(), Type::Int64);   // id
     EXPECT_EQ(chunk.columns[1].type(), Type::Double);  // score
     for (size_t i = 0; i < chunk.row_count; ++i) {
       // Rows arrive in ascending id order (the KV cursor is ordered).
@@ -73,8 +73,8 @@ TEST(RowTableSourceTest, ScanWithProjectionAndBatching) {
       ++expected_id;
     }
   }
-  EXPECT_EQ(expected_id, kN);   // saw every row
-  EXPECT_EQ(chunks, 3);         // 250 rows / 100 per batch -> 100,100,50
+  EXPECT_EQ(expected_id, kN);  // saw every row
+  EXPECT_EQ(chunks, 3);        // 250 rows / 100 per batch -> 100,100,50
 
   remove(kDb);
 }

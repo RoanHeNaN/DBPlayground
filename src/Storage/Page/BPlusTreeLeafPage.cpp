@@ -16,7 +16,6 @@
 
 #include "Common/EncodedKey.h"
 #include "Common/RID.h"
-
 #include "Common/Utils.h"
 #include "Storage/Page/BPlusTreePage.h"
 
@@ -146,7 +145,6 @@ void BPlusTreeLeafPage::CopyNFrom(MappingType *items, int size) {
  * If the key does not exist, then return false
  */
 bool BPlusTreeLeafPage::Lookup(const EncodedKey &key, RID *value) const {
-
   /* Binary search */
   int pos = KeyIndex(key);
   if (pos < GetSize() && (array_[pos].first == key)) {

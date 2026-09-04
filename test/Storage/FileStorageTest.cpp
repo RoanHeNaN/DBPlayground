@@ -54,8 +54,8 @@ void RunStorageContract(IStorage &s) {
   EXPECT_EQ(got, "");
 
   // Out-of-range reads return false (no throw).
-  EXPECT_FALSE(in->ReadAt(10, 7, &got));   // runs past EOF
-  EXPECT_FALSE(in->ReadAt(17, 1, &got));   // offset past EOF
+  EXPECT_FALSE(in->ReadAt(10, 7, &got));  // runs past EOF
+  EXPECT_FALSE(in->ReadAt(17, 1, &got));  // offset past EOF
 
   // An input file is a snapshot: rewriting the path doesn't disturb it.
   WriteFile(s, "a.dat", "XY");

@@ -30,9 +30,7 @@ constexpr uint32_t kTombstone = 0xFFFFFFFFu;
 
 ValuePageHeader *Header(Page *page) { return reinterpret_cast<ValuePageHeader *>(page->GetData()); }
 
-ValueSlot *Slots(Page *page) {
-  return reinterpret_cast<ValueSlot *>(page->GetData() + sizeof(ValuePageHeader));
-}
+ValueSlot *Slots(Page *page) { return reinterpret_cast<ValueSlot *>(page->GetData() + sizeof(ValuePageHeader)); }
 
 // Bytes available for one more (slot entry + value) in this page.
 size_t FreeSpace(const ValuePageHeader *hdr) {

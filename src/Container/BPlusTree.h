@@ -30,7 +30,6 @@
 
 namespace dbplay {
 
-
 /**
  * Main class providing the API for the Interactive B+ Tree.
  *

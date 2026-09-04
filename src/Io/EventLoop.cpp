@@ -26,14 +26,9 @@ std::string ThreadIdString(const std::thread::id &id) {
 }  // namespace
 
 EventLoop::EventLoop()
-    : looping_(false),
-      quit_(false),
-      thread_id_(std::this_thread::get_id()),
-      poller_(std::make_unique<Poller>(this)) {}
+    : looping_(false), quit_(false), thread_id_(std::this_thread::get_id()), poller_(std::make_unique<Poller>(this)) {}
 
-EventLoop::~EventLoop() {
-  DBPLAYGROUND_ASSERT(!looping_, "EventLoop destroyed while still looping");
-}
+EventLoop::~EventLoop() { DBPLAYGROUND_ASSERT(!looping_, "EventLoop destroyed while still looping"); }
 
 void EventLoop::Loop() {
   DBPLAYGROUND_ASSERT(!looping_, "EventLoop::Loop called re-entrantly");
@@ -71,8 +66,8 @@ bool EventLoop::HasChannel(Channel *channel) {
 
 void EventLoop::AssertInLoopThread() const {
   if (!IsInLoopThread()) {
-    LOG(FATAL) << "EventLoop was created in thread " << ThreadIdString(thread_id_)
-               << " but accessed from thread " << ThreadIdString(std::this_thread::get_id());
+    LOG(FATAL) << "EventLoop was created in thread " << ThreadIdString(thread_id_) << " but accessed from thread "
+               << ThreadIdString(std::this_thread::get_id());
   }
 }
 

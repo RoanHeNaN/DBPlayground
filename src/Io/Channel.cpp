@@ -14,8 +14,7 @@ const int Channel::kNoneEvent = 0;
 const int Channel::kReadEvent = POLLIN | POLLPRI;
 const int Channel::kWriteEvent = POLLOUT;
 
-Channel::Channel(EventLoop *loop, int fd)
-    : loop_(loop), fd_(fd), events_(kNoneEvent), revents_(0), index_(-1) {}
+Channel::Channel(EventLoop *loop, int fd) : loop_(loop), fd_(fd), events_(kNoneEvent), revents_(0), index_(-1) {}
 
 Channel::~Channel() = default;
 

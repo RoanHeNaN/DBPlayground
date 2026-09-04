@@ -42,8 +42,7 @@ void Poller::FillActiveChannels(int num_events, ChannelList *active_channels) co
 void Poller::UpdateChannel(Channel *channel) {
   if (channel->IndexInPoller() < 0) {
     // A brand new channel: append a pollfd for it.
-    DBPLAYGROUND_ASSERT(channels_.find(channel->Fd()) == channels_.end(),
-                        "Poller: fd already registered");
+    DBPLAYGROUND_ASSERT(channels_.find(channel->Fd()) == channels_.end(), "Poller: fd already registered");
     struct pollfd pfd;
     pfd.fd = channel->Fd();
     pfd.events = static_cast<short>(channel->Events());
@@ -55,8 +54,7 @@ void Poller::UpdateChannel(Channel *channel) {
   } else {
     // Existing channel: refresh the watched events in place.
     int index = channel->IndexInPoller();
-    DBPLAYGROUND_ASSERT(channels_.find(channel->Fd()) != channels_.end(),
-                        "Poller: updating unregistered fd");
+    DBPLAYGROUND_ASSERT(channels_.find(channel->Fd()) != channels_.end(), "Poller: updating unregistered fd");
     struct pollfd &pfd = pollfds_[index];
     pfd.events = static_cast<short>(channel->Events());
     pfd.revents = 0;
@@ -72,8 +70,7 @@ void Poller::UpdateChannel(Channel *channel) {
 
 void Poller::RemoveChannel(Channel *channel) {
   int index = channel->IndexInPoller();
-  DBPLAYGROUND_ASSERT(channels_.find(channel->Fd()) != channels_.end(),
-                      "Poller: removing unregistered fd");
+  DBPLAYGROUND_ASSERT(channels_.find(channel->Fd()) != channels_.end(), "Poller: removing unregistered fd");
   channels_.erase(channel->Fd());
 
   auto last_index = static_cast<int>(pollfds_.size()) - 1;

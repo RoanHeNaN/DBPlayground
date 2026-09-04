@@ -19,9 +19,9 @@
 namespace dbplay {
 
 struct Chunk {
-  std::vector<int> column_ids;   // projected schema indices, parallel to columns
-  std::vector<Column> columns;   // one Column per projected field
-  size_t row_count = 0;          // rows in this batch (length of each Column)
+  std::vector<int> column_ids;  // projected schema indices, parallel to columns
+  std::vector<Column> columns;  // one Column per projected field
+  size_t row_count = 0;         // rows in this batch (length of each Column)
 };
 
 }  // namespace dbplay

@@ -4,9 +4,9 @@
 
 #include "Storage/Encoding/ZlibCompression.h"
 
-#include <stdexcept>
-
 #include <zlib.h>  // contrib zlib-ng, ZLIB_COMPAT -> standard zlib API
+
+#include <stdexcept>
 
 namespace dbplay {
 
@@ -20,9 +20,9 @@ void ZlibCompression::Compress(const Slice &in, std::string *out) const {
   out->resize(start + bound);
 
   uLongf dest_len = bound;
-  const int rc = compress2(reinterpret_cast<Bytef *>(out->data() + start), &dest_len,
-                           reinterpret_cast<const Bytef *>(in.data()), static_cast<uLong>(in.size()),
-                           Z_DEFAULT_COMPRESSION);
+  const int rc =
+      compress2(reinterpret_cast<Bytef *>(out->data() + start), &dest_len, reinterpret_cast<const Bytef *>(in.data()),
+                static_cast<uLong>(in.size()), Z_DEFAULT_COMPRESSION);
   if (rc != Z_OK) {
     throw std::runtime_error("ZlibCompression: compress2 failed");
   }

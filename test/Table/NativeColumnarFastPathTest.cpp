@@ -83,7 +83,7 @@ TEST(NativeColumnarFastPathTest, FixedWidthUncompressedReadsOnlyRequestedBytes) 
   const int64_t kN = 1000;  // Int64 column page ~ 8000 bytes
   WriteFile(spy, "t.dbc", kN, CompressionId::None);
 
-  NativeColumnarFileFormat fmt(MakeSchema());  // default None
+  NativeColumnarFileFormat fmt(MakeSchema());       // default None
   auto reader = fmt.OpenReader(spy, "t.dbc", {0});  // project the Int64 column only
   ASSERT_NE(reader, nullptr);
 

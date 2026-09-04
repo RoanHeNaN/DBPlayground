@@ -33,7 +33,8 @@ struct EncodedKey {
   bool operator==(const EncodedKey &o) const { return std::memcmp(bytes, o.bytes, kKeyLen) == 0; }
 };
 
-static_assert(std::is_trivially_copyable<EncodedKey>::value, "EncodedKey must be trivially copyable (stored inline in pages)");
+static_assert(std::is_trivially_copyable<EncodedKey>::value,
+              "EncodedKey must be trivially copyable (stored inline in pages)");
 static_assert(sizeof(EncodedKey) == kKeyLen, "EncodedKey must be exactly kKeyLen bytes");
 
 // Build an EncodedKey from a typed key (caller knows T at compile time).

@@ -132,7 +132,7 @@ BPlusTreeEngine::BPlusTreeEngine(std::shared_ptr<BufferPoolManager> buffer_pool_
   }
 
   index_ = std::make_unique<BPlusTree>(buffer_pool_manager_);  // default fanout
-  index_->SetRootPageId(root_page_id);                        // restore (INVALID = empty)
+  index_->SetRootPageId(root_page_id);                         // restore (INVALID = empty)
   tuples_ = std::make_unique<TupleStore>(buffer_pool_manager_, tuple_first_page_id);
 }
 

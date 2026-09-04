@@ -102,7 +102,7 @@ page_id_t BPlusTreeInternalPage::Lookup(const EncodedKey &key) const {
  * NOTE: This method is only called within InsertIntoParent()(b_plus_tree.cpp)
  */
 void BPlusTreeInternalPage::PopulateNewRoot(const page_id_t &old_value, const EncodedKey &new_key,
-                                                const page_id_t &new_value) {
+                                            const page_id_t &new_value) {
   // This is called when a new root page is created. It only contains one key, two values.
   SetKeyAt(1, new_key);
   if (old_value <= new_value) {
@@ -121,7 +121,7 @@ void BPlusTreeInternalPage::PopulateNewRoot(const page_id_t &old_value, const En
  * @return:  new size after insertion
  */
 int BPlusTreeInternalPage::InsertNodeAfter(const page_id_t &old_value, const EncodedKey &new_key,
-                                               const page_id_t &new_value) {
+                                           const page_id_t &new_value) {
   int value_index = ValueIndex(old_value);
   if (value_index == -1) {
     LOG(WARNING) << "Could no find value " << old_value << " current node size " << GetSize();
@@ -165,7 +165,7 @@ void UpdateParentPageId(page_id_t page_id, page_id_t parent_page_id,
  * The suffix is moved.
  */
 void BPlusTreeInternalPage::MoveHalfTo(BPlusTreeInternalPage *recipient,
-                                           std::shared_ptr<BufferPoolManager> buffer_pool_manager) {
+                                       std::shared_ptr<BufferPoolManager> buffer_pool_manager) {
   // Move array_[(size+1)/2 : size-1]
   // Number of elements moved: size-1 - (size+1)/2 + 1 = size-(size+1)/2 = size-ceil(size/2) = floor(size/2)
   // After move, this->GetSize() >= recipient->GetSize().
@@ -184,7 +184,7 @@ void BPlusTreeInternalPage::MoveHalfTo(BPlusTreeInternalPage *recipient,
  * The caller should update the size. This function doesn't.
  */
 void BPlusTreeInternalPage::CopyNFrom(MappingType *items, int size,
-                                          std::shared_ptr<BufferPoolManager> buffer_pool_manager) {
+                                      std::shared_ptr<BufferPoolManager> buffer_pool_manager) {
   int old_size = GetSize();
   for (int i = old_size; i < size; i++) {
     int offset = i - old_size;
@@ -236,7 +236,7 @@ page_id_t BPlusTreeInternalPage::RemoveAndReturnOnlyChild() {
  * pages that are moved to the recipient
  */
 void BPlusTreeInternalPage::MoveAllTo(BPlusTreeInternalPage *recipient, const EncodedKey &middle_key,
-                                          std::shared_ptr<BufferPoolManager> buffer_pool_manager) {
+                                      std::shared_ptr<BufferPoolManager> buffer_pool_manager) {
   // Assume recipient is the left sibling
   // This is only called by Coalesce() in b_plus_tree.cpp
 
@@ -270,7 +270,7 @@ void BPlusTreeInternalPage::MoveAllTo(BPlusTreeInternalPage *recipient, const En
  * pages that are moved to the recipient
  */
 void BPlusTreeInternalPage::MoveFirstToEndOf(BPlusTreeInternalPage *recipient, const EncodedKey &middle_key,
-                                                 std::shared_ptr<BufferPoolManager> buffer_pool_manager) {
+                                             std::shared_ptr<BufferPoolManager> buffer_pool_manager) {
   recipient->array_[recipient->GetSize()] = array_[0];
   recipient->array_[recipient->GetSize()].first = middle_key;
 
@@ -291,7 +291,7 @@ void BPlusTreeInternalPage::MoveFirstToEndOf(BPlusTreeInternalPage *recipient, c
  * So I need to 'adopt' it by changing its parent page id, which needs to be persisted with BufferPoolManger
  */
 void BPlusTreeInternalPage::CopyLastFrom(const MappingType &pair,
-                                             std::shared_ptr<BufferPoolManager> buffer_pool_manager) {
+                                         std::shared_ptr<BufferPoolManager> buffer_pool_manager) {
   array_[GetSize()] = pair;
 
   UpdateParentPageId(array_[GetSize()].second, GetPageId(), buffer_pool_manager);
@@ -306,7 +306,7 @@ void BPlusTreeInternalPage::CopyLastFrom(const MappingType &pair,
  * are moved to the recipient
  */
 void BPlusTreeInternalPage::MoveLastToFrontOf(BPlusTreeInternalPage *recipient, const EncodedKey &middle_key,
-                                                  std::shared_ptr<BufferPoolManager> buffer_pool_manager) {
+                                              std::shared_ptr<BufferPoolManager> buffer_pool_manager) {
   // make room
   for (int i = recipient->GetSize() - 1; i >= 0; i--) {
     recipient->array_[i + 2] = recipient->array_[i];
@@ -334,7 +334,7 @@ void BPlusTreeInternalPage::MoveLastToFrontOf(BPlusTreeInternalPage *recipient, 
  * So I need to 'adopt' it by changing its parent page id, which needs to be persisted with BufferPoolManger
  */
 void BPlusTreeInternalPage::CopyFirstFrom(const MappingType &pair,
-                                              std::shared_ptr<BufferPoolManager> buffer_pool_manager) {
+                                          std::shared_ptr<BufferPoolManager> buffer_pool_manager) {
   // make room
   for (int i = GetSize() - 1; i >= 0; i--) {
     array_[i + 1] = array_[i];

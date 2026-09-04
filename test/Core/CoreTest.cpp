@@ -24,9 +24,7 @@ constexpr size_t NUM_TRIES = 1;
 const constexpr size_t BUFFER_POOL_SLOT_NUM = 1024;
 
 // Deterministic RID for a logical key, so inserts and reads agree.
-static RID RidOf(key_t k) {
-  return RID(static_cast<page_id_t>(k & 0xFFFFFFFF), static_cast<uint32_t>(k & 0xFFFFFFFF));
-}
+static RID RidOf(key_t k) { return RID(static_cast<page_id_t>(k & 0xFFFFFFFF), static_cast<uint32_t>(k & 0xFFFFFFFF)); }
 
 template <typename... Args>
 void LaunchParallelTest(std::vector<std::thread> &threads, uint32_t num_threads, Args &&...args) {

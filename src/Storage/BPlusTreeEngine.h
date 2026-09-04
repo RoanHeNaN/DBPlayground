@@ -36,8 +36,8 @@ class BPlusTreeEngine : public IStorageEngine {
   // `is_new` selects create (reserve + init page 0) vs open (read page 0). For
   // create, key_type/value_type are recorded in the meta; for open they are
   // read from it (the passed values are ignored).
-  BPlusTreeEngine(std::shared_ptr<BufferPoolManager> buffer_pool_manager, bool is_new,
-                  Type key_type = Type::Invalid, Type value_type = Type::Invalid);
+  BPlusTreeEngine(std::shared_ptr<BufferPoolManager> buffer_pool_manager, bool is_new, Type key_type = Type::Invalid,
+                  Type value_type = Type::Invalid);
 
   // key must be an order-preserving encoding of exactly kKeyLen bytes (produced
   // by encode_key<T>); value is opaque bytes.
@@ -52,7 +52,7 @@ class BPlusTreeEngine : public IStorageEngine {
 
  private:
   std::shared_ptr<BufferPoolManager> buffer_pool_manager_;
-  std::unique_ptr<BPlusTree> index_;   // EncodedKey -> RID
+  std::unique_ptr<BPlusTree> index_;    // EncodedKey -> RID
   std::unique_ptr<TupleStore> tuples_;  // RID -> value bytes
   Type key_type_;
   Type value_type_;
