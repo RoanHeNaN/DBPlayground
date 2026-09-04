@@ -42,6 +42,15 @@ size_t FixedWidth(Type t) {
   }
 }
 
+// Guard a read of `need` bytes starting at `off` against a blob of `size`
+// bytes. WAL/row blobs come from object storage, so a truncated or crafted
+// length prefix must fault here rather than read out of bounds.
+void RequireBytes(size_t off, size_t need, size_t size, const char *where) {
+  if (off + need < off || off + need > size) {
+    throw std::runtime_error(std::string("RowCodec: truncated row blob in ") + where);
+  }
+}
+
 }  // namespace
 
 std::string RowCodec::Encode(const std::vector<Value> &row) const {
@@ -83,10 +92,12 @@ std::string RowCodec::Encode(const std::vector<Value> &row) const {
 
 std::vector<Value> RowCodec::Decode(const Slice &blob) const {
   const char *p = blob.data();
+  const size_t size = blob.size();
   size_t off = 0;
   std::vector<Value> row;
   row.reserve(schema_.size());
   for (const Field &f : schema_) {
+    if (const size_t fw = FixedWidth(f.type); fw != 0) RequireBytes(off, fw, size, "Decode");
     switch (f.type) {
       case Type::Int32:
         row.push_back(Value::Int32(ReadPod<int32_t>(p + off)));
@@ -110,8 +121,10 @@ std::vector<Value> RowCodec::Decode(const Slice &blob) const {
         break;
       case Type::String:
       case Type::Blob: {
+        RequireBytes(off, 4, size, "Decode");
         uint32_t len = ReadPod<uint32_t>(p + off);
         off += 4;
+        RequireBytes(off, len, size, "Decode");
         row.push_back(Value::String(std::string(p + off, len)));
         off += len;
         break;
@@ -131,9 +144,11 @@ void RowCodec::DecodeInto(const Slice &blob, const std::vector<int> &projection,
   }
 
   const char *p = blob.data();
+  const size_t size = blob.size();
   size_t off = 0;
   for (size_t i = 0; i < schema_.size(); ++i) {
     const int k = out_pos[i];
+    if (const size_t fw = FixedWidth(schema_[i].type); fw != 0) RequireBytes(off, fw, size, "DecodeInto");
     switch (schema_[i].type) {
       case Type::Int32: {
         int32_t v = ReadPod<int32_t>(p + off);
@@ -167,8 +182,10 @@ void RowCodec::DecodeInto(const Slice &blob, const std::vector<int> &projection,
       }
       case Type::String:
       case Type::Blob: {
+        RequireBytes(off, 4, size, "DecodeInto");
         uint32_t len = ReadPod<uint32_t>(p + off);
         off += 4;
+        RequireBytes(off, len, size, "DecodeInto");
         if (k >= 0) (*cols)[k].AppendBytes(Slice(p + off, len));
         off += len;
         break;

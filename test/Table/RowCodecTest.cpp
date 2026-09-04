@@ -74,4 +74,27 @@ TEST(RowCodecTest, DecodeIntoProjectedColumns) {
   }
 }
 
+// A blob truncated mid-field must fault, not read out of bounds. Row blobs
+// arrive from object storage in the cloud path, so a short or crafted length
+// prefix has to be rejected rather than trusted.
+TEST(RowCodecTest, DecodeRejectsTruncatedFixedField) {
+  RowCodec codec(MakeSchema());
+  std::string blob = codec.Encode({Value::Int64(7), Value::String("x"), Value::Double(1.0), Value::Bool(true)});
+  blob.resize(4);  // cut off inside the leading Int64
+  EXPECT_THROW(codec.Decode(Slice(blob)), std::runtime_error);
+}
+
+TEST(RowCodecTest, DecodeRejectsStringLengthPastEnd) {
+  // (s STRING) only. A huge length prefix with no payload behind it must throw.
+  RowCodec codec(Schema{{"s", Type::String}});
+  std::string blob;
+  const uint32_t huge = 0xFFFFFFFFu;
+  blob.append(reinterpret_cast<const char *>(&huge), sizeof(huge));
+  EXPECT_THROW(codec.Decode(Slice(blob)), std::runtime_error);
+
+  std::vector<Column> cols;
+  cols.emplace_back(Type::String);
+  EXPECT_THROW(codec.DecodeInto(Slice(blob), {0}, &cols), std::runtime_error);
+}
+
 }  // namespace dbplay
