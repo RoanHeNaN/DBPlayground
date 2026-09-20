@@ -1,0 +1,210 @@
+test/Cloud/S3IntegrationTest.cpp
+  s_eec3f51c60d7ea::t_745394e21a0e25 24,79,162,181,183
+  s_eec3f51c60d7ea::t_bd42600daa5052 115
+  s_eec3f51c60d7ea::t_2a45ebda8ef97f 66
+  s_eec3f51c60d7ea::t_4998435328922e 159,165
+  s_eec3f51c60d7ea::t_88fe223c9e57bc 63-65,113-114
+src/Cloud/TableSnapshotLoader.h
+  s_eec3f51c60d7ea::t_5f377ed0e2f90b 10
+  s_eec3f51c60d7ea::t_85c06bcf24c379 15,19,25-26
+  s_eec3f51c60d7ea::t_745394e21a0e25 8
+docs/CloudTesting.md
+  s_eec3f51c60d7ea::t_ad18c409fc9341 33
+src/Metadata/TableMetadataTypes.cpp
+  s_eec3f51c60d7ea::t_52ba6f735f3789 16
+  s_eec3f51c60d7ea::t_5f377ed0e2f90b 1-5,11-15,17-24
+  s_eec3f51c60d7ea::t_2a45ebda8ef97f 10
+  s_eec3f51c60d7ea::t_88fe223c9e57bc 6-9
+docs/design/CloudImportQueryFramework.md
+  s_eec3f51c60d7ea::t_ac638d7b958415 43,147,149
+  s_eec3f51c60d7ea::t_52ba6f735f3789 148
+  s_eec3f51c60d7ea::t_2a45ebda8ef97f 114
+  s_eec3f51c60d7ea::t_6cca7ce6d6c906 171-172,180
+  s_eec3f51c60d7ea::t_237b27ced7f45d 97
+  s_eec3f51c60d7ea::t_5f377ed0e2f90b 38
+  s_eec3f51c60d7ea::t_42f218807258ce 48,154,161-162
+src/Metadata/TableMetadataCodec.h
+  s_eec3f51c60d7ea::t_5f377ed0e2f90b 7
+  s_eec3f51c60d7ea::t_745394e21a0e25 16-17,22-23
+src/Cloud/CloudTable.h
+  s_eec3f51c60d7ea::t_6fd1368e8d127b 28,45-46
+  s_eec3f51c60d7ea::t_88fe223c9e57bc 29
+  s_eec3f51c60d7ea::t_745394e21a0e25 13
+test/Cloud/CloudPathTest.cpp
+  s_eec3f51c60d7ea::t_2f596eadde1739 314,316
+  s_eec3f51c60d7ea::t_bd42600daa5052 201,321,356,377,380
+  s_eec3f51c60d7ea::t_2a45ebda8ef97f 95,350-351
+  s_eec3f51c60d7ea::t_52ba6f735f3789 65,72,376
+  s_eec3f51c60d7ea::t_88fe223c9e57bc 67-69,74-75,92-94,199-200,205-206,330-331
+  s_eec3f51c60d7ea::t_ad18c409fc9341 323,329
+  s_eec3f51c60d7ea::t_c0a10e7e5391e3 307
+  s_eec3f51c60d7ea::t_745394e21a0e25 13,16,77-78,83,108,253,271,273,326,328,344,348,352
+  s_eec3f51c60d7ea::t_237b27ced7f45d 346
+src/Metadata/IMetadataStore.h
+  s_eec3f51c60d7ea::t_5f377ed0e2f90b 32
+src/Metadata/TableCurrentStateStore.h
+  s_eec3f51c60d7ea::t_ca4485245024bf 14
+  s_eec3f51c60d7ea::t_05c72f8af07988 1-2,51-52,55-56,60-63,81
+  s_eec3f51c60d7ea::t_2a45ebda8ef97f 15,34-35
+  s_eec3f51c60d7ea::t_5f377ed0e2f90b 9,13,40,42,47-48,50,53-54,57-59,69-70
+  s_eec3f51c60d7ea::t_88fe223c9e57bc 66
+src/Cloud/IObjectKeyGenerator.h
+  s_eec3f51c60d7ea::t_2a45ebda8ef97f 16
+  s_eec3f51c60d7ea::t_52ba6f735f3789 15
+src/Metadata/TableCurrentStateStore.cpp
+  s_eec3f51c60d7ea::t_5f377ed0e2f90b 1,9,19,26,33,36,40-41,46,51,53,55,64,69,77,80,92-95,99-100,107,116,144-147,182-185,189-190,192,198,201,208,215,220,224,265,267,292,295,303,309,332,339,357-358,363,374,385,392
+  s_eec3f51c60d7ea::t_237b27ced7f45d 87,97,172,175,281,284,359,369-370
+  s_eec3f51c60d7ea::t_05bb44a1594e09 293-294
+  s_eec3f51c60d7ea::t_788510b6788bd6 301
+  s_eec3f51c60d7ea::t_d97471f486c76d 84,88,96,111,125,171,178,206-207,214,216-217,238-239,280,287,316-317,323
+  s_eec3f51c60d7ea::t_88fe223c9e57bc 27,58-59,81-83,104-105,119-121,123-124,126-127,234-235,299-300,350,364-366,380-381
+  s_eec3f51c60d7ea::t_2a45ebda8ef97f 102,177,187,241,246,248,255,269,272,282,286,288,291,297,346,360
+  s_eec3f51c60d7ea::t_05c72f8af07988 202-203,210,225-233,236-237,240,251,253,257,271,285,312-313,319,325,344-345,351-352,354
+src/Cloud/ICompactedDataManifestStore.h
+  s_eec3f51c60d7ea::t_745394e21a0e25 3-10,14-16,19-22
+  s_eec3f51c60d7ea::t_85c06bcf24c379 1-2,11-13,23
+  s_eec3f51c60d7ea::t_88fe223c9e57bc 17-18
+src/Cloud/CloudTableWriter.h
+  s_eec3f51c60d7ea::t_5f377ed0e2f90b 13
+  s_eec3f51c60d7ea::t_d97471f486c76d 31
+  s_eec3f51c60d7ea::t_a26d92a2780a8c 30,45
+  s_eec3f51c60d7ea::t_bd42600daa5052 43
+test/Metadata/TableCurrentStateStoreTest.cpp
+  s_eec3f51c60d7ea::t_2f596eadde1739 32,73
+  s_eec3f51c60d7ea::t_ad18c409fc9341 10,17-20,25-26,31,33,35-36,45,54,56,59,62,64,66,69-70,72,75-76,79,81,85-86,92-93,96,98-100,102,108,113,115-116,120,122,125,127-129,134,145,148,150-152,166,185,188,190-191,193,195,200,206,209,211-212,214,218,225,227,229,231,234,236-238,243,255,257-258,260-263,266,268-270,275,280,283,285-287,290-296,302,304-306,311,316,322,325,328,330-331,334,337-339
+  s_eec3f51c60d7ea::t_237b27ced7f45d 28
+src/Cloud/MetadataCompactedDataManifestStore.cpp
+  s_eec3f51c60d7ea::t_745394e21a0e25 1-6,11,15-16,18-20
+  s_eec3f51c60d7ea::t_88fe223c9e57bc 7-9
+  s_eec3f51c60d7ea::t_85c06bcf24c379 10,12-14,17
+src/Cloud/CloudTableWriter.cpp
+  s_eec3f51c60d7ea::t_d97471f486c76d 67,94,110,141,146,151-154,156,158,190,255-256
+  s_eec3f51c60d7ea::t_a26d92a2780a8c 66,70-71,81-82,88,90,107,113,143,163,166,171,176,192,195,200,218,221-222,254
+  s_eec3f51c60d7ea::t_745394e21a0e25 87,160
+  s_eec3f51c60d7ea::t_88fe223c9e57bc 91-93,174-175
+  s_eec3f51c60d7ea::t_bd42600daa5052 56,72,161,169,186,216
+  s_eec3f51c60d7ea::t_39fb235062b2c8 9,130-132,213-215
+src/Cloud/IBatchCommitResolver.h
+  s_eec3f51c60d7ea::t_b9720937dadbea 20
+  s_eec3f51c60d7ea::t_5f377ed0e2f90b 8
+src/Cloud/S3/S3FileStorage.cpp
+  s_eec3f51c60d7ea::t_afc1171548774d 42-43
+docs/design/CloudGarbageCollection.md
+  s_eec3f51c60d7ea::t_5f377ed0e2f90b 9,75,159,190
+  s_eec3f51c60d7ea::t_16f1af1a829968 5,56
+  s_eec3f51c60d7ea::t_ea1b1cc89fbcc5 17
+  s_eec3f51c60d7ea::t_2a45ebda8ef97f 18
+  s_eec3f51c60d7ea::t_ac638d7b958415 20,116,124,128
+  s_eec3f51c60d7ea::t_52ba6f735f3789 70
+src/Cloud/CloudTableCompactor.cpp
+  s_d37e72d9f18c0a::t_a22e2e9d00417a 59-60,63-65,70-74
+  s_eec3f51c60d7ea::t_745394e21a0e25 8,66,69,79,97,109,137
+  s_eec3f51c60d7ea::t_88fe223c9e57bc 51-52,92-93,124-125,141-143,208-209
+  s_eec3f51c60d7ea::t_2ce03ca165bca7 61-62,67-68,75,77,100-101,103-107,110,115,117,119-123,127-131,133,138-139,147-148,200,203-204,210-212,217
+  s_eec3f51c60d7ea::t_2a45ebda8ef97f 76,91,132,150-151
+  s_eec3f51c60d7ea::t_52ba6f735f3789 113
+  s_eec3f51c60d7ea::t_237b27ced7f45d 102
+  s_eec3f51c60d7ea::t_bd42600daa5052 38,44,47,50,94,156,168,215
+  s_eec3f51c60d7ea::t_d97471f486c76d 144,146,149,152,158,160-161,169
+  s_eec3f51c60d7ea::t_5d43950975608e 81-83,90,213-214
+  s_eec3f51c60d7ea::t_7d0fbc763499cf 11,108,126
+docs/design/HighCardinalityMultiTenantObservability.md
+  s_eec3f51c60d7ea::t_2a45ebda8ef97f 234
+  s_eec3f51c60d7ea::t_63faf894dc4ac3 244,250,258
+  s_eec3f51c60d7ea::t_ac638d7b958415 232,239,251,260,267,382-383,411
+  s_eec3f51c60d7ea::t_2f596eadde1739 233
+  s_eec3f51c60d7ea::t_c0a10e7e5391e3 156,419-420,422
+  s_eec3f51c60d7ea::t_bb8a036543fa74 271
+src/Cloud/CloudTableSource.cpp
+  s_eec3f51c60d7ea::t_6fd1368e8d127b 42-43,49,51
+  s_eec3f51c60d7ea::t_a22f91a34d334d 13-14,17-18,21,27,29,34-35
+  s_eec3f51c60d7ea::t_bd42600daa5052 39
+docs/design/CloudTableLayering.md
+  s_eec3f51c60d7ea::t_5f377ed0e2f90b 4,41,64,115,117,131,273,287,300
+  s_eec3f51c60d7ea::t_b2f00760d49cd1 65,96,122,244,288
+  s_eec3f51c60d7ea::t_c0a10e7e5391e3 107
+  s_eec3f51c60d7ea::t_72e183fac9002c 224-225,228-232,236,240,281
+  s_eec3f51c60d7ea::t_ac638d7b958415 3,226,299,311,314,320-321,340-341,344
+  s_eec3f51c60d7ea::t_ea265aeaf44f6e 51
+  s_eec3f51c60d7ea::t_237b27ced7f45d 317,329,339,346
+  s_eec3f51c60d7ea::t_2a45ebda8ef97f 223,322
+src/Metadata/TableMetadataCodec.cpp
+  s_eec3f51c60d7ea::t_745394e21a0e25 18,138-139,142,144-145,149-151,154,156,205,214,220,223,229,269-270,272,275-276,280,282-283,286-287,289
+  s_eec3f51c60d7ea::t_85c06bcf24c379 14-16,137,157,159-161,206,208,222,233
+  s_eec3f51c60d7ea::t_237b27ced7f45d 211,226
+  s_eec3f51c60d7ea::t_52ba6f735f3789 246,261
+  s_eec3f51c60d7ea::t_2a45ebda8ef97f 215-216,230-231
+src/Cloud/CloudTypes.h
+  s_eec3f51c60d7ea::t_5f377ed0e2f90b 9
+  s_eec3f51c60d7ea::t_2a45ebda8ef97f 31,36-37,40
+  s_eec3f51c60d7ea::t_745394e21a0e25 34,38,81
+  s_eec3f51c60d7ea::t_237b27ced7f45d 32
+  s_eec3f51c60d7ea::t_e43e3d7cc7ee13 41-43
+src/Cloud/CloudTableSource.h
+  s_eec3f51c60d7ea::t_6fd1368e8d127b 14,18,29
+src/Cloud/CloudTableCompactor.h
+  s_d37e72d9f18c0a::t_a22e2e9d00417a 38
+  s_eec3f51c60d7ea::t_a22f91a34d334d 17-19,26-31,39-40
+  s_eec3f51c60d7ea::t_b9720937dadbea 37
+  s_eec3f51c60d7ea::t_5f377ed0e2f90b 11
+  s_eec3f51c60d7ea::t_bd42600daa5052 23,41,46,49
+src/Metadata/TableMetadataTypes.h
+  s_eec3f51c60d7ea::t_c9c621fc6d8a44 25-28
+  s_eec3f51c60d7ea::t_85c06bcf24c379 1-2,35,52-54,69
+  s_eec3f51c60d7ea::t_237b27ced7f45d 18
+  s_eec3f51c60d7ea::t_2a45ebda8ef97f 3-17,19-24,29-33,36-43,45-51,55-68
+  s_eec3f51c60d7ea::t_52ba6f735f3789 34,44
+src/Cloud/MetadataCompactedDataManifestStore.h
+  s_eec3f51c60d7ea::t_745394e21a0e25 3-8,10-12,15-16,19,22-23,25-28
+  s_eec3f51c60d7ea::t_5f377ed0e2f90b 9
+  s_eec3f51c60d7ea::t_4148ad79dfbd19 13
+  s_eec3f51c60d7ea::t_88fe223c9e57bc 20-21
+  s_eec3f51c60d7ea::t_85c06bcf24c379 1-2,14,17-18,24,29
+src/Cloud/CloudTable.cpp
+  s_eec3f51c60d7ea::t_88fe223c9e57bc 40-41
+  s_eec3f51c60d7ea::t_6fd1368e8d127b 12-14,18-19,22-24,31,53
+src/Cloud/TableSnapshotLoader.cpp
+  s_eec3f51c60d7ea::t_2a45ebda8ef97f 34-35,37,57,70,78-79
+  s_eec3f51c60d7ea::t_237b27ced7f45d 30
+  s_eec3f51c60d7ea::t_745394e21a0e25 32,38,46,49,58,66,74
+  s_eec3f51c60d7ea::t_b9720937dadbea 39,52-53,84
+  s_eec3f51c60d7ea::t_88fe223c9e57bc 82-83
+  s_eec3f51c60d7ea::t_d97471f486c76d 27
+  s_eec3f51c60d7ea::t_85c06bcf24c379 12,14-17,22-23,29,42,44,47,60,62,75
+  s_eec3f51c60d7ea::t_52ba6f735f3789 72
+  s_eec3f51c60d7ea::t_9afcad16fed54f 7-8,54-55,85
+src/Cloud/S3/S3Client.cpp
+  s_f60dcc903bb347::t_a84d1d28cda9fa 11,139,142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "ce2acbd20d0ae400b94221e7a13215bf6d20f892",
+  "prompts": {},
+  "sessions": {
+    "s_d37e72d9f18c0a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ad49-944c-78b3-bf66-3f14c91ab13a",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "zhiqiang-hhhh <seuhezhiqiang@163.com>"
+    },
+    "s_eec3f51c60d7ea": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0be28-0afe-7763-b5bf-b576a3250c20",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "zhiqiang-hhhh <seuhezhiqiang@163.com>"
+    },
+    "s_f60dcc903bb347": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b5c3c134-24bb-4fdb-bfd3-c4091e3cd1e4",
+        "model": "unknown"
+      },
+      "human_author": "zhiqiang-hhhh <seuhezhiqiang@163.com>"
+    }
+  }
+}
