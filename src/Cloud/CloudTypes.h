@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "Metadata/IMetadataStore.h"
-#include "Metadata/TableState.h"
+#include "Metadata/TableMetadataTypes.h"
 #include "Table/Chunk.h"
 #include "Table/Schema.h"
 
@@ -28,16 +28,19 @@ struct TableDescriptor {
 };
 
 struct TableSnapshot {
-  MetadataVersion metadata_version;
-  uint64_t state_version = 0;
+  MetadataVersion current_metadata_version;
+  uint64_t current_state_version = 0;
   uint64_t writer_epoch = 0;
-  uint64_t indexed_cursor = 0;
+  uint64_t compacted_cursor = 0;
   uint64_t committed_cursor = 0;
-  std::string base_manifest;
-  std::string commit_head;
-  std::vector<std::string> data_files;
+  std::string compacted_data_manifest_key;
+  std::string latest_commit_key;
+  std::vector<std::string> compacted_data_files;
   std::vector<std::string> wal_files;
-  std::vector<CommitRecord> wal_commits;
+  std::vector<CommitRecord> wal_commit_records;
+
+  // Query data is the compacted-data set through compacted_cursor followed by
+  // the committed WAL tail through committed_cursor.
 };
 
 // A group-commit unit. The coordinator above CloudTableWriter may combine
@@ -75,7 +78,7 @@ enum class CloudCompactCode { Compacted, AlreadyPublished, NothingToDo, Retryabl
 
 struct CloudCompactResult {
   CloudCompactCode code = CloudCompactCode::InvalidState;
-  uint64_t indexed_cursor = 0;
+  uint64_t compacted_cursor = 0;
   uint64_t committed_cursor = 0;
 };
 

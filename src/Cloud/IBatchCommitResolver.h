@@ -5,7 +5,7 @@
 #include <vector>
 
 #include "Cloud/CloudTypes.h"
-#include "Metadata/TableMetadataStore.h"
+#include "Metadata/TableCurrentStateStore.h"
 
 namespace dbplay {
 
@@ -17,7 +17,7 @@ enum class BatchCommitStatus { NotCommitted, Committed, Partial };
 class IBatchCommitResolver {
  public:
   virtual ~IBatchCommitResolver() = default;
-  virtual BatchCommitStatus Lookup(const TableDescriptor &table, const VersionedTableState &current,
+  virtual BatchCommitStatus Lookup(const TableDescriptor &table, const VersionedCurrentTableState &current_state,
                                    const std::vector<std::string> &batch_ids) const = 0;
 };
 

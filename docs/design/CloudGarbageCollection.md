@@ -2,11 +2,11 @@
 
 > Status: **design note; not implemented**。
 >
-> 本文记录 Cloud 模式下 WAL / commit / base 对象的回收设计。GC 目前完全未实现（见
+> 本文记录 Cloud 模式下 WAL / commit / compacted-data 对象的回收设计。GC 目前完全未实现（见
 > [`CloudImportQueryFramework.md`](CloudImportQueryFramework.md) §6 与
 > [`CloudTableLayering.md`](CloudTableLayering.md) §12）。热路径遵守零 LIST 契约，GC 是可用 LIST
 > 的冷路径任务。关联：导入/查询路径见 `CloudImportQueryFramework.md`，epoch/CAS/fencing 语义见
-> `CloudTableLayering.md` 与 `src/Metadata/TableMetadataStore.cpp`。
+> `CloudTableLayering.md` 与 `src/Metadata/TableCurrentStateStore.cpp`。
 
 ## 1. 两类垃圾
 
@@ -14,10 +14,10 @@
 
 | 类型 | 产生原因 | 可达性 | 判定难点 |
 |---|---|---|---|
-| **① 过时 WAL** | 正常提交、已被 compaction 吸收进 base | 曾在 commit 链上，现已在 `indexed_cursor` 之外 | 易判：cursor 水位 + 谁还 pin |
-| **② 孤儿 WAL/commit** | 写了对象但 CURRENT CAS 未成功（被 fence、`RebaseRequired` 换 key、崩溃） | **从不可达**，任何 `commit_head` 都到不了 | 难判：孤儿与"在途未 CAS 的合法对象"在存储上无法区分 |
+| **① 过时 WAL** | 正常提交、已被 compaction 吸收到 compacted data | 曾在 commit 链上，现已在 `compacted_cursor` 之外 | 易判：cursor 水位 + 谁还 pin |
+| **② 孤儿 WAL/commit** | 写了对象但 CURRENT CAS 未成功（被 fence、`RebaseRequired` 换 key、崩溃） | **从不可达**，任何 `latest_commit_key` 都到不了 | 难判：孤儿与"在途未 CAS 的合法对象"在存储上无法区分 |
 
-**过时 WAL** 用 `indexed_cursor` 水位 + 最老存活快照低水位（或时间窗口）做引用计数式回收，风险可控，不是本文重点。
+**过时 WAL** 用 `compacted_cursor` 水位 + 最老存活快照低水位（或时间窗口）做引用计数式回收，风险可控，不是本文重点。
 
 **孤儿**才是难点：面对一个未被引用的 `wal/<uuid>.wal`，无法从存储状态区分
 
@@ -53,7 +53,7 @@ CURRENT 引用消失对象 → corruption。叠加 GC 节点与写者的时钟�
 
 ## 3. 方案一：把 epoch 编进对象 key（因果判据取代时间）
 
-现状：`writer_epoch` 只记在 **CommitRecord**（`src/Metadata/TableState.h`）里；**WAL 数据文件本身
+现状：`writer_epoch` 只记在 **CommitRecord**（`src/Metadata/TableMetadataTypes.h`）里；**WAL 数据文件本身
 不带任何 epoch**。因此"有 WAL 但没有 commit 记录"的裸孤儿（写者 PUT 完 WAL、还没
 `PutIfAbsent` commit 就崩溃）无法读出 epoch，只能退回时间宽限期——正是第 2 节要避免的。
 
@@ -67,12 +67,12 @@ commit/<epoch>/<uuid>.meta
 这样即使裸孤儿也能从 **key** 读出所属 epoch，无需读内容。回收判据变为因果判据：
 
 ```
-可回收孤儿 = 不可达（从 CURRENT.commit_head 沿 parent_commit walk 不到）
+可回收孤儿 = 不可达（从 CURRENT.latest_commit_key 沿 parent_commit_key walk 不到）
              且 key.epoch < CURRENT.writer_epoch        // 属于已被顶替的死任期
 ```
 
 **为什么安全**：epoch 单调递增，每次 `AcquireWriter` 都 +1，一个 epoch 只归一个写者任期
-（`TableMetadataStore.cpp:88-93`）。一旦 CURRENT 的 epoch 前进过某个值，那个更老 epoch 的写者
+（`TableCurrentStateStore.cpp:88-93`）。一旦 CURRENT 的 epoch 前进过某个值，那个更老 epoch 的写者
 **再也不可能合法 CAS**（会被判 `Fenced`）——这是 fencing 已经保证的不可逆逻辑序，与时钟无关。
 
 **天然避开"活写者还没接管"**：若老写者 epoch=5 卡住、期间无人接管（CURRENT 仍是 epoch=5），
@@ -113,7 +113,7 @@ GC 只删这个列表里的对象。删的都是**有据可查的死对象**，�
 
 - GC 是**独立冷路径**任务（可与 compaction 节点合并），不在查询/写入关键路径上；
 - 冷路径**可用 LIST**（热路径不可），扫 `wal/`、`commit/` 前缀枚举候选；
-- 读 CURRENT 拿 `indexed_cursor` 与 `writer_epoch` 作安全下界；
+- 读 CURRENT 拿 `compacted_cursor` 与 `writer_epoch` 作安全下界；
 - 全程**只删对象、不改语义状态**：GC 完全不跑，系统正确性也不受影响，只是费空间。这让 GC 可以
   做得极保守、极懒。
 
@@ -121,11 +121,11 @@ GC 只删这个列表里的对象。删的都是**有据可查的死对象**，�
 
 | 垃圾类型 | 删除条件 | 依据（非时间地板） |
 |---|---|---|
-| 过时 WAL | `last_cursor ≤ indexed_cursor` 且无在途 snapshot pin | `indexed_cursor` + 最老存活快照低水位 |
+| 过时 WAL | `last_cursor ≤ compacted_cursor` 且无在途 snapshot pin | `compacted_cursor` + 最老存活快照低水位 |
 | 孤儿（有 commit / key 带 epoch） | 不可达 且 `epoch < CURRENT.writer_epoch` | epoch 单调落差（方案一） |
 | 孤儿（显式登记） | 出现在作废/遗留列表中 | 墓碑（方案二） |
 | 无墓碑裸孤儿 | 仅剩超长保守时间兜底 | ——（应通过方案一尽量消除此类） |
-| 老 commit record | cursor 段 < indexed_cursor 且 batch_ids 已进 dedupe index | `indexed_cursor` + dedupe 窗口 |
+| 老 commit record | cursor 段 < compacted_cursor 且 batch_ids 已进 dedupe index | `compacted_cursor` + dedupe 窗口 |
 
 ## 8. 业界调研：其他对象存储系统怎么做
 
@@ -156,7 +156,7 @@ GC 只删这个列表里的对象。删的都是**有据可查的死对象**，�
 
 **Doris 存算分离**(3.0 GA)和本项目架构几乎同构,值得重点对照:
 - **元数据源** = FoundationDB(TxnKv),对应本项目的 `IMetadataStore`;MS(Meta Service)对应
-  `TableMetadataStore`;**Recycler** 就是这里要设计的冷路径 GC。
+  `TableCurrentStateStore`;**Recycler** 就是这里要设计的冷路径 GC。
 - **committed 数据**:rowset 是否存活由 FDB 里的可达性决定;失效时 MS 写一条 **recycle KV(=墓碑)**,
   且"写墓碑"和"改状态"在**同一个 FDB 事务**里原子完成——这正是本项目方案二(显式墓碑)的成熟形态,
   FDB 的多 key 事务让它比我们单 key CAS 更省心。
@@ -187,7 +187,7 @@ Lance table/transaction docs。
 
 ## 9. 待决策 / 后续
 
-- 接口草案：`ICloudGarbageCollector` + 安全水位计算，接入 `TableMetadataStore` 与 snapshot 机制；
+- 接口草案：`ICloudGarbageCollector` + 安全水位计算，接入 `TableCurrentStateStore` 与 snapshot 机制；
 - key 是否统一编码 epoch（方案一；参考 Neon 的 generation-in-key 与 Doris resource-id）；
 - 作废列表 / recycle 标记的存储形态（独立对象？manifest 的一部分？参考 Doris 的 recycle KV）与其自身回收；
 - 时间兜底取值：参考业界 3–7 天收敛值，且仅用于方案一/二覆盖不到的裸孤儿。

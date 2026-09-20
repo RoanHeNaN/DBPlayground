@@ -11,9 +11,11 @@
 namespace dbplay {
 namespace {
 
-constexpr std::array<char, 4> kTableStateMagic{'D', 'B', 'T', 'S'};
+// Keep the existing bytes for on-disk compatibility; only the C++ name is
+// being clarified.
+constexpr std::array<char, 4> kCurrentTableStateMagic{'D', 'B', 'T', 'S'};
 constexpr std::array<char, 4> kCommitRecordMagic{'D', 'B', 'C', 'R'};
-constexpr std::array<char, 4> kBaseManifestMagic{'D', 'B', 'B', 'M'};
+constexpr std::array<char, 4> kCompactedDataManifestMagic{'D', 'B', 'B', 'M'};
 constexpr uint32_t kCodecVersion = 1;
 
 class Writer {
@@ -132,31 +134,31 @@ class Reader {
   size_t offset_ = 0;
 };
 
-void ValidateTableState(const TableState &state) {
-  if (state.format_version != TableState::kFormatVersion) {
-    throw std::invalid_argument("TableMetadataCodec: unsupported TableState format version");
+void ValidateCurrentTableState(const CurrentTableState &state) {
+  if (state.format_version != CurrentTableState::kFormatVersion) {
+    throw std::invalid_argument("TableMetadataCodec: unsupported CurrentTableState format version");
   }
   if (state.table_id.empty()) {
-    throw std::invalid_argument("TableMetadataCodec: TableState table_id is empty");
+    throw std::invalid_argument("TableMetadataCodec: CurrentTableState table_id is empty");
   }
-  if (state.indexed_cursor > state.committed_cursor) {
-    throw std::invalid_argument("TableMetadataCodec: indexed_cursor exceeds committed_cursor");
+  if (state.compacted_cursor > state.committed_cursor) {
+    throw std::invalid_argument("TableMetadataCodec: compacted_cursor exceeds committed_cursor");
   }
 }
 
-void ValidateBaseManifest(const BaseManifest &manifest) {
-  if (manifest.format_version != BaseManifest::kFormatVersion) {
-    throw std::invalid_argument("TableMetadataCodec: unsupported BaseManifest format version");
+void ValidateCompactedDataManifest(const CompactedDataManifest &manifest) {
+  if (manifest.format_version != CompactedDataManifest::kFormatVersion) {
+    throw std::invalid_argument("TableMetadataCodec: unsupported CompactedDataManifest format version");
   }
   if (manifest.table_id.empty()) {
-    throw std::invalid_argument("TableMetadataCodec: BaseManifest table_id is empty");
+    throw std::invalid_argument("TableMetadataCodec: CompactedDataManifest table_id is empty");
   }
-  if (manifest.indexed_cursor == 0 || manifest.data_files.empty()) {
-    throw std::invalid_argument("TableMetadataCodec: BaseManifest has no indexed data files");
+  if (manifest.compacted_cursor == 0 || manifest.compacted_data_files.empty()) {
+    throw std::invalid_argument("TableMetadataCodec: CompactedDataManifest has no compacted data files");
   }
-  for (const auto &data_file : manifest.data_files) {
-    if (data_file.empty()) {
-      throw std::invalid_argument("TableMetadataCodec: BaseManifest has an empty data file");
+  for (const auto &compacted_data_file : manifest.compacted_data_files) {
+    if (compacted_data_file.empty()) {
+      throw std::invalid_argument("TableMetadataCodec: CompactedDataManifest has an empty compacted data file");
     }
   }
 }
@@ -200,35 +202,35 @@ void ReadHeader(Reader *reader, const std::array<char, 4> &magic) {
 
 }  // namespace
 
-std::string TableMetadataCodec::EncodeTableState(const TableState &state) {
-  ValidateTableState(state);
+std::string TableMetadataCodec::EncodeCurrentTableState(const CurrentTableState &state) {
+  ValidateCurrentTableState(state);
   Writer writer;
-  WriteHeader(&writer, kTableStateMagic);
+  WriteHeader(&writer, kCurrentTableStateMagic);
   writer.U32(state.format_version);
   writer.String(state.table_id);
-  writer.U64(state.state_version);
+  writer.U64(state.current_state_version);
   writer.U64(state.writer_epoch);
   writer.U64(state.committed_cursor);
-  writer.U64(state.indexed_cursor);
-  writer.String(state.base_manifest);
-  writer.String(state.commit_head);
+  writer.U64(state.compacted_cursor);
+  writer.String(state.compacted_data_manifest_key);
+  writer.String(state.latest_commit_key);
   return writer.Finish();
 }
 
-TableState TableMetadataCodec::DecodeTableState(const Slice &bytes) {
+CurrentTableState TableMetadataCodec::DecodeCurrentTableState(const Slice &bytes) {
   Reader reader(bytes);
-  ReadHeader(&reader, kTableStateMagic);
-  TableState state;
+  ReadHeader(&reader, kCurrentTableStateMagic);
+  CurrentTableState state;
   state.format_version = reader.U32();
   state.table_id = reader.String();
-  state.state_version = reader.U64();
+  state.current_state_version = reader.U64();
   state.writer_epoch = reader.U64();
   state.committed_cursor = reader.U64();
-  state.indexed_cursor = reader.U64();
-  state.base_manifest = reader.String();
-  state.commit_head = reader.String();
+  state.compacted_cursor = reader.U64();
+  state.compacted_data_manifest_key = reader.String();
+  state.latest_commit_key = reader.String();
   reader.ExpectEnd();
-  ValidateTableState(state);
+  ValidateCurrentTableState(state);
   return state;
 }
 
@@ -241,7 +243,7 @@ std::string TableMetadataCodec::EncodeCommitRecord(const CommitRecord &record) {
   writer.U64(record.writer_epoch);
   writer.U64(record.first_cursor);
   writer.U64(record.last_cursor);
-  writer.String(record.parent_commit);
+  writer.String(record.parent_commit_key);
   writer.Strings(record.wal_files);
   writer.Strings(record.batch_ids);
   return writer.Finish();
@@ -256,7 +258,7 @@ CommitRecord TableMetadataCodec::DecodeCommitRecord(const Slice &bytes) {
   record.writer_epoch = reader.U64();
   record.first_cursor = reader.U64();
   record.last_cursor = reader.U64();
-  record.parent_commit = reader.String();
+  record.parent_commit_key = reader.String();
   record.wal_files = reader.Strings();
   record.batch_ids = reader.Strings();
   reader.ExpectEnd();
@@ -264,27 +266,27 @@ CommitRecord TableMetadataCodec::DecodeCommitRecord(const Slice &bytes) {
   return record;
 }
 
-std::string TableMetadataCodec::EncodeBaseManifest(const BaseManifest &manifest) {
-  ValidateBaseManifest(manifest);
+std::string TableMetadataCodec::EncodeCompactedDataManifest(const CompactedDataManifest &manifest) {
+  ValidateCompactedDataManifest(manifest);
   Writer writer;
-  WriteHeader(&writer, kBaseManifestMagic);
+  WriteHeader(&writer, kCompactedDataManifestMagic);
   writer.U32(manifest.format_version);
   writer.String(manifest.table_id);
-  writer.U64(manifest.indexed_cursor);
-  writer.Strings(manifest.data_files);
+  writer.U64(manifest.compacted_cursor);
+  writer.Strings(manifest.compacted_data_files);
   return writer.Finish();
 }
 
-BaseManifest TableMetadataCodec::DecodeBaseManifest(const Slice &bytes) {
+CompactedDataManifest TableMetadataCodec::DecodeCompactedDataManifest(const Slice &bytes) {
   Reader reader(bytes);
-  ReadHeader(&reader, kBaseManifestMagic);
-  BaseManifest manifest;
+  ReadHeader(&reader, kCompactedDataManifestMagic);
+  CompactedDataManifest manifest;
   manifest.format_version = reader.U32();
   manifest.table_id = reader.String();
-  manifest.indexed_cursor = reader.U64();
-  manifest.data_files = reader.Strings();
+  manifest.compacted_cursor = reader.U64();
+  manifest.compacted_data_files = reader.Strings();
   reader.ExpectEnd();
-  ValidateBaseManifest(manifest);
+  ValidateCompactedDataManifest(manifest);
   return manifest;
 }
 

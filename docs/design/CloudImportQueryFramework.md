@@ -35,17 +35,17 @@ ICloudCatalog ──resolve──> TableDescriptor
                               │              ├─ IBatchCommitResolver
                               │              ├─ IFileFormat(WAL)
                               │              ├─ IStorage(files)
-                              │              └─ TableMetadataStore
+                              │              └─ TableCurrentStateStore
                               │                       │
                               ▼                       ▼
                     TableSnapshotLoader        IMetadataStore CAS
                        ├─ CURRENT
-                       ├─ IManifestStore
+                       ├─ ICompactedDataManifestStore
                        └─ CommitRecord chain
                               │
                               ▼
                      CloudTableSource
-                       ├─ IFileFormat(base DBC1)
+                       ├─ IFileFormat(compacted DBC1)
                        ├─ IFileFormat(WAL)
                        └─ IStorage(files)
 ```
@@ -94,7 +94,7 @@ CloudTableWriter.Import
 GET CURRENT
   ├─ missing → PutIfAbsent(initial CURRENT)
   └─ exists
-CAS CURRENT: writer_epoch += 1, state_version += 1
+CAS CURRENT: writer_epoch += 1, current_state_version += 1
 ```
 
 只有 CAS 成功的 `CloudTableWriter` 进入 started 状态。另一个候选 owner 收到 `Contended`，不能开始
@@ -111,7 +111,7 @@ CloudImportBatch { batch_ids, chunks }
   │
   ├─ generate commit/<unique>.meta
   ├─ PutIfAbsent(immutable CommitRecord)
-  └─ CAS CURRENT(commit_head, committed_cursor)    publish / visibility point
+  └─ CAS CURRENT(latest_commit_key, committed_cursor)    publish / visibility point
 ```
 
 返回 `Committed`/`AlreadyCommitted` 之前，CURRENT 必须已经引用 commit。只有 WAL PUT 成功不算导入
@@ -144,22 +144,22 @@ CloudTable.OpenSnapshot
   ▼
 TableSnapshotLoader
   1. GET CURRENT
-  2. GET base_manifest（若非空）
-  3. 从 commit_head 向 parent_commit 反向读取
-  4. 到达 indexed_cursor 后停止
+  2. GET compacted_data_manifest_key（若非空）
+  3. 从 latest_commit_key 向 parent_commit_key 反向读取
+  4. 到达 compacted_cursor 后停止
   5. 反转 commit 列表，得到确定顺序的 WAL files
   │
   ▼
 CloudTableSource
-  ├─ scan base data_files
+  ├─ scan compacted data files
   └─ scan committed wal_files
 ```
 
 Snapshot loader 验证 commit cursor 连续、manifest 水位与 CURRENT 一致、所有对象属于同一 Table。
 任一缺失或断链都作为 metadata corruption/hard error，不能静默跳过，否则会向查询返回缺行结果。
 
-`CloudTableSource::Scan(projection)` 返回组合 cursor，先消费 compacted base files，再消费 snapshot 中的
-WAL tail。base 与 WAL 各自通过 `IFileFormat` 解释，因此首版测试可以复用 DBC1，未来替换成独立 WAL
+`CloudTableSource::Scan(projection)` 返回组合 cursor，先消费 compacted data files，再消费 snapshot 中的
+WAL tail。compacted data 与 WAL 各自通过 `IFileFormat` 解释，因此首版测试可以复用 DBC1，未来替换成独立 WAL
 编码不需要修改 query service 或执行器。
 
 ## 5. Snapshot 隔离与立即可见
@@ -168,8 +168,8 @@ WAL tail。base 与 WAL 各自通过 `IFileFormat` 解释，因此首版测试�
 
 ```text
 CURRENT MetadataVersion
-state / epoch / indexed / committed cursor
-base manifest and data files
+current state / epoch / compacted / committed cursor
+compacted-data manifest and files
 ordered commit records and WAL files
 ```
 
@@ -177,7 +177,7 @@ ordered commit records and WAL files
 
 - 导入 CAS 成功后，新打开的查询立即发现新 WAL；
 - 旧查询继续使用旧 snapshot；
-- compaction 可以发布新的 base manifest，而不改变在途 source 的文件集合。
+- compaction 可以发布新的 compacted-data manifest，而不改变在途 source 的文件集合。
 
 当前测试使用一个 `List()` 会直接抛异常的 `IStorage` 跑通完整导入/查询路径，以固定“热路径零 LIST”
 这一契约。

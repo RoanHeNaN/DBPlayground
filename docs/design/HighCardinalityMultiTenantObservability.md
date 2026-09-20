@@ -153,7 +153,7 @@ TableWriteState {
   committed_cursor
   pending_requests
   group_commit_deadline
-  unindexed_bytes
+  uncompacted_bytes
 }
 ```
 
@@ -229,46 +229,46 @@ group commit 可以按以下条件触发：
   "table_id": "tenant-a-events",
   "writer_epoch": 7,
   "committed_cursor": 1042,
-  "indexed_cursor": 1038,
-  "base_manifest": "manifest/base-1038.json",
-  "commit_head": "commit/commit-<uuid>.json"
+  "compacted_cursor": 1038,
+  "compacted_data_manifest_key": "manifest/compacted-1038.json",
+  "latest_commit_key": "commit/commit-<uuid>.json"
 }
 ```
 
 物理实现可以选择连续 WAL key、immutable commit chain，或 CURRENT 中的有界 pending list。
-无论选择哪一种，都必须让 reader 从 `indexed_cursor + 1` 精确发现到 `committed_cursor` 的数据，
+无论选择哪一种，都必须让 reader 从 `compacted_cursor + 1` 精确发现到 `committed_cursor` 的数据，
 不依赖 LIST。
 
 ---
 
-## 7. 强一致读：base files + committed WAL tail
+## 7. 强一致读：compacted data files + committed WAL tail
 
 查询读取的是一个 Table snapshot：
 
 ```text
 committed table state
-  = base DBC1 files through indexed_cursor
-  + committed WAL after indexed_cursor
+  = compacted DBC1 files through compacted_cursor
+  + committed WAL after compacted_cursor
 ```
 
 逻辑读路径：
 
 ```text
 1. GET CURRENT / commit metadata
-2. GET base manifest
+2. GET compacted-data manifest
 3. 读取已经 compact 的 DBC1 files
-4. 精确 GET (indexed_cursor, committed_cursor] 的 WAL
+4. 精确 GET (compacted_cursor, committed_cursor] 的 WAL
 5. 合并结果
 ```
 
 如果：
 
 ```text
-indexed_cursor   = 1038
+compacted_cursor   = 1038
 committed_cursor = 1042
 ```
 
-查询就读取 base snapshot，再重放 1039–1042。后台 compaction 是否已经运行不影响新写入的
+查询就读取 compacted-data snapshot，再重放 1039–1042。后台 compaction 是否已经运行不影响新写入的
 可见性，只影响查询需要重放多少 WAL。
 
 查询在开始时固定 CURRENT 版本；GC 不能删除该 snapshot 仍可能引用的数据。具体实现需要
@@ -379,8 +379,8 @@ compactor 集群与 writer 集群独立扩展。不同 Table 天然可以并行 
 
 ```text
 add new DBC1 files
-advance indexed_cursor over exactly the covered WAL range
-update base_manifest
+advance compacted_cursor over exactly the covered WAL range
+update compacted_data_manifest_key
 ```
 
 一次 data-file compaction 必须表达：
@@ -408,7 +408,7 @@ ingestion rate > compaction rate
 那么：
 
 ```text
-committed_cursor - indexed_cursor
+committed_cursor - compacted_cursor
 ```
 
 会持续增长，强一致查询必须重放越来越长的 WAL tail。最终问题从写入吞吐转化为查询延迟、GET
@@ -416,10 +416,10 @@ committed_cursor - indexed_cursor
 
 因此必须按 Table 维护：
 
-- `unindexed_bytes`；
-- `unindexed_rows`；
+- `uncompacted_bytes`；
+- `uncompacted_rows`；
 - WAL segment count；
-- oldest unindexed age；
+- oldest uncompacted age；
 - compaction lag。
 
 超过阈值时优先：

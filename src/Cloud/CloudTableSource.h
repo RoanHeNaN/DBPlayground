@@ -11,11 +11,11 @@
 
 namespace dbplay {
 
-// Immutable per-query source: compacted base files followed by the committed
+// Immutable per-query source: compacted data files followed by the committed
 // WAL tail captured in one TableSnapshot.
 class CloudTableSource : public ITableSource {
  public:
-  CloudTableSource(Schema schema, TableSnapshot snapshot, std::shared_ptr<IFileFormat> base_format,
+  CloudTableSource(Schema schema, TableSnapshot snapshot, std::shared_ptr<IFileFormat> compacted_data_format,
                    std::shared_ptr<IFileFormat> wal_format, std::shared_ptr<IStorage> files);
 
   const Schema &schema() const override { return schema_; }
@@ -26,7 +26,7 @@ class CloudTableSource : public ITableSource {
  private:
   Schema schema_;
   TableSnapshot snapshot_;
-  std::shared_ptr<IFileFormat> base_format_;
+  std::shared_ptr<IFileFormat> compacted_data_format_;
   std::shared_ptr<IFileFormat> wal_format_;
   std::shared_ptr<IStorage> files_;
 };

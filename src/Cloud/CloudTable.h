@@ -10,7 +10,7 @@
 #include "Cloud/CloudTableWriter.h"
 #include "Cloud/CloudTypes.h"
 #include "Cloud/IBatchCommitResolver.h"
-#include "Cloud/IManifestStore.h"
+#include "Cloud/ICompactedDataManifestStore.h"
 #include "Cloud/IObjectKeyGenerator.h"
 #include "Cloud/TableSnapshotLoader.h"
 #include "Metadata/IMetadataStore.h"
@@ -25,8 +25,8 @@ namespace dbplay {
 class CloudTable {
  public:
   CloudTable(TableDescriptor descriptor, std::shared_ptr<IStorage> files, std::shared_ptr<IMetadataStore> metadata,
-             std::shared_ptr<IManifestStore> manifests, std::shared_ptr<IFileFormat> base_format,
-             std::shared_ptr<IFileFormat> wal_format);
+             std::shared_ptr<ICompactedDataManifestStore> compacted_data_manifest_store,
+             std::shared_ptr<IFileFormat> compacted_data_format, std::shared_ptr<IFileFormat> wal_format);
 
   const TableDescriptor &descriptor() const { return descriptor_; }
 
@@ -42,8 +42,8 @@ class CloudTable {
   TableDescriptor descriptor_;
   std::shared_ptr<IStorage> files_;
   std::shared_ptr<IMetadataStore> metadata_;
-  std::shared_ptr<IManifestStore> manifests_;
-  std::shared_ptr<IFileFormat> base_format_;
+  std::shared_ptr<ICompactedDataManifestStore> compacted_data_manifest_store_;
+  std::shared_ptr<IFileFormat> compacted_data_format_;
   std::shared_ptr<IFileFormat> wal_format_;
 };
 

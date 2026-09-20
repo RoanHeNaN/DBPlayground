@@ -39,8 +39,8 @@ class S3InputFile : public IInputFile {
 };
 
 // Buffers all appended bytes and PUTs them as one object on Close (truncating
-// any prior content), matching the OpenOutput contract. Fine for WAL/base
-// files written whole; multipart upload is a future optimization for large
+// any prior content), matching the OpenOutput contract. Fine for
+// WAL/compacted-data files written whole; multipart upload is a future optimization for large
 // objects.
 class S3OutputStream : public IOutputStream {
  public:

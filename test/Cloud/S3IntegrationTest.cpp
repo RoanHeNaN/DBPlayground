@@ -21,7 +21,7 @@
 #include "Cloud/CloudTable.h"
 #include "Cloud/IBatchCommitResolver.h"
 #include "Cloud/IObjectKeyGenerator.h"
-#include "Cloud/MetadataManifestStore.h"
+#include "Cloud/MetadataCompactedDataManifestStore.h"
 #include "Cloud/S3/S3Client.h"
 #include "Cloud/S3/S3FileStorage.h"
 #include "Cloud/S3/S3MetadataStore.h"
@@ -60,8 +60,10 @@ class SequenceKeys : public IObjectKeyGenerator {
   std::string NewCommitKey(const std::string &) override {
     return "commit/" + std::to_string(next_commit_++) + ".meta";
   }
-  std::string NewDataFileKey(const std::string &) override { return "data/" + std::to_string(next_data_++) + ".dbc1"; }
-  std::string NewManifestKey(const std::string &) override {
+  std::string NewCompactedDataFileKey(const std::string &) override {
+    return "data/" + std::to_string(next_data_++) + ".dbc1";
+  }
+  std::string NewCompactedDataManifestKey(const std::string &) override {
     return "manifest/" + std::to_string(next_manifest_++) + ".meta";
   }
 
@@ -74,7 +76,7 @@ class SequenceKeys : public IObjectKeyGenerator {
 
 class NeverCommittedBatches : public IBatchCommitResolver {
  public:
-  BatchCommitStatus Lookup(const TableDescriptor &, const VersionedTableState &,
+  BatchCommitStatus Lookup(const TableDescriptor &, const VersionedCurrentTableState &,
                            const std::vector<std::string> &) const override {
     return BatchCommitStatus::NotCommitted;
   }
@@ -108,9 +110,9 @@ class S3IntegrationTest : public ::testing::Test {
 
     auto files = std::make_shared<S3FileStorage>(client_, bucket);
     auto metadata = std::make_shared<S3MetadataStore>(client_, bucket);
-    auto manifests =
-        std::make_shared<MetadataManifestStore>(descriptor_.table_id, descriptor_.metadata_prefix, metadata);
-    table_ = std::make_shared<CloudTable>(descriptor_, files, metadata, manifests,
+    auto compacted_data_manifest_store = std::make_shared<MetadataCompactedDataManifestStore>(
+        descriptor_.table_id, descriptor_.metadata_prefix, metadata);
+    table_ = std::make_shared<CloudTable>(descriptor_, files, metadata, compacted_data_manifest_store,
                                           std::make_shared<NativeColumnarFileFormat>(descriptor_.schema),
                                           std::make_shared<WalFileFormat>(descriptor_.schema));
     keys_ = std::make_shared<SequenceKeys>();
@@ -154,13 +156,13 @@ TEST_F(S3IntegrationTest, FullImportQueryCompactCycleOnMinIO) {
   EXPECT_EQ(CollectProjected(*pinned, {0}).size(), 3u);  // immutable snapshot
   EXPECT_EQ(RowCount(), 6u);                             // fresh query sees all
 
-  // Compaction folds the WAL tail into a base file and advances indexed_cursor.
+  // Compaction folds the WAL tail into a compacted-data file and advances compacted_cursor.
   const auto compacted = table_->NewCompactor(keys_)->Compact();
   ASSERT_EQ(compacted.code, CloudCompactCode::Compacted);
-  EXPECT_EQ(compacted.indexed_cursor, 2u);
+  EXPECT_EQ(compacted.compacted_cursor, 2u);
   EXPECT_EQ(compacted.committed_cursor, 2u);
 
-  // A post-compaction import lands on the WAL tail above the new base.
+  // A post-compaction import lands on the WAL tail above the new compacted-data set.
   CloudImportBatch third;
   third.batch_ids = {"client-4"};
   third.chunks = {MakeChunk(300, 1)};
@@ -176,9 +178,9 @@ TEST_F(S3IntegrationTest, FullImportQueryCompactCycleOnMinIO) {
 
   const auto snapshot = table_->LoadSnapshot();
   ASSERT_TRUE(snapshot.has_value());
-  EXPECT_EQ(snapshot->indexed_cursor, 2u);
+  EXPECT_EQ(snapshot->compacted_cursor, 2u);
   EXPECT_EQ(snapshot->committed_cursor, 3u);
-  EXPECT_EQ(snapshot->data_files.size(), 1u);
+  EXPECT_EQ(snapshot->compacted_data_files.size(), 1u);
   EXPECT_EQ(snapshot->wal_files.size(), 1u);
 }
 

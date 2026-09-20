@@ -10,7 +10,7 @@
 #include "Cloud/IBatchCommitResolver.h"
 #include "Cloud/IObjectKeyGenerator.h"
 #include "Metadata/IMetadataStore.h"
-#include "Metadata/TableMetadataStore.h"
+#include "Metadata/TableCurrentStateStore.h"
 #include "Storage/File/IStorage.h"
 #include "Table/Format/IFileFormat.h"
 
@@ -27,8 +27,8 @@ class CloudTableWriter {
   CloudWriterStartResult Start();
   CloudImportResult Import(const CloudImportBatch &batch);
 
-  bool started() const { return current_.has_value(); }
-  uint64_t writer_epoch() const { return current_.has_value() ? current_->state.writer_epoch : 0; }
+  bool started() const { return current_state_.has_value(); }
+  uint64_t writer_epoch() const { return current_state_.has_value() ? current_state_->current_state.writer_epoch : 0; }
 
  private:
   bool IsValidBatch(const CloudImportBatch &batch) const;
@@ -40,9 +40,9 @@ class CloudTableWriter {
   std::shared_ptr<IFileFormat> wal_format_;
   std::shared_ptr<IObjectKeyGenerator> keys_;
   std::shared_ptr<IBatchCommitResolver> batches_;
-  TableMetadataStore table_metadata_;
+  TableCurrentStateStore current_state_store_;
   size_t max_publish_attempts_;
-  std::optional<VersionedTableState> current_;
+  std::optional<VersionedCurrentTableState> current_state_;
 };
 
 }  // namespace dbplay

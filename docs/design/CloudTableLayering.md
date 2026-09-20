@@ -1,7 +1,7 @@
 # Cloud Table Layering: Catalog, Metadata, Files, and Cache
 
-> Status: **分阶段实现中**。`IMetadataStore`、内存 CAS、`TableState` / `CommitRecord` codec、
-> `TableMetadataStore`、WAL publish 编排、snapshot loader 与 `CloudTableSource` 框架已经落地；
+> Status: **分阶段实现中**。`IMetadataStore`、内存 CAS、`CurrentTableState` / `CommitRecord` codec、
+> `TableCurrentStateStore`、WAL publish 编排、snapshot loader 与 `CloudTableSource` 框架已经落地；
 > 生产级 WAL/manifest/S3/Catalog/router/RPC adapter 尚未实现。完整调用路径见
 > [`CloudImportQueryFramework.md`](CloudImportQueryFramework.md)。
 >
@@ -38,7 +38,7 @@ Catalog                         name → TableDescriptor
    ▼
 CloudTable / TableHandle        long-lived per-table handle
    │
-   ├── TableMetadataStore       CURRENT / commit / epoch / rebase protocol
+   ├── TableCurrentStateStore       CURRENT / commit / epoch / rebase protocol
    │       │
    │       ▼
    │   IMetadataStore           versioned key/value + CAS
@@ -48,7 +48,7 @@ CloudTable / TableHandle        long-lived per-table handle
            │
            ▼
        CloudTableSource         immutable query snapshot
-           ├── TableSource      base DBC1 files
+           ├── CompactedDataSource  compacted DBC1 files
            ├── WalTableSource   committed WAL tail
            └── IStorage         file locator + byte-range IO
                    │
@@ -61,8 +61,8 @@ CloudTable / TableHandle        long-lived per-table handle
 metadata path 与 data path 是两条独立路径：
 
 ```text
-TableMetadataStore → IMetadataStore → S3
-TableSource         → IStorage       → cache → S3
+TableCurrentStateStore → IMetadataStore → S3
+CloudTableSource    → IStorage       → cache → S3
 ```
 
 它们可以共享 S3 client 和 bucket，但不共享抽象接口。
@@ -93,7 +93,7 @@ struct TableDescriptor {
 
 ## 4. CloudTable：长生命周期 Table handle
 
-node 可以按 `table_id` 缓存 `CloudTable`，但不应长期缓存一个不断修改文件列表的 `TableSource`。
+node 可以按 `table_id` 缓存 `CloudTable`，但不应长期缓存一个不断修改文件列表的 `CloudTableSource`。
 
 ```cpp
 class CloudTable {
@@ -104,7 +104,7 @@ class CloudTable {
   TableDescriptor descriptor_;
   std::shared_ptr<IStorage> files_;
   std::shared_ptr<IMetadataStore> metadata_;
-  TableMetadataStore table_metadata_;
+  TableCurrentStateStore current_state_store_;
 };
 ```
 
@@ -112,14 +112,14 @@ class CloudTable {
 
 ---
 
-## 5. TableMetadataStore：Table 领域协议
+## 5. TableCurrentStateStore：Table 领域协议
 
-`TableMetadataStore` 理解：
+`TableCurrentStateStore` 理解：
 
 - CURRENT；
 - immutable CommitRecord；
 - writer epoch / fencing；
-- committed/indexed cursor；
+- committed/compacted cursor；
 - manifest；
 - batch-id 幂等；
 - CAS 失败后的分类与 rebase；
@@ -128,7 +128,7 @@ class CloudTable {
 逻辑接口示意：
 
 ```cpp
-class TableMetadataStore {
+class TableCurrentStateStore {
  public:
   TableSnapshot LoadSnapshot(TableId table);
   AcquireWriterResult AcquireWriter(TableId table, WriterId writer);
@@ -220,24 +220,28 @@ metadata path，强一致读取不能被普通 data cache 静默遮蔽。
 
 ```cpp
 struct TableSnapshot {
-  MetadataVersion metadata_version;
-  Schema schema;
-  std::vector<std::string> data_files;
-  std::vector<std::string> wal_files;
-  uint64_t indexed_cursor;
+  MetadataVersion current_metadata_version;
+  uint64_t current_state_version;
+  uint64_t writer_epoch;
+  uint64_t compacted_cursor;
   uint64_t committed_cursor;
+  std::string compacted_data_manifest_key;
+  std::string latest_commit_key;
+  std::vector<std::string> compacted_data_files;
+  std::vector<std::string> wal_files;
+  std::vector<CommitRecord> wal_commit_records;
 };
 ```
 
-`CloudTableSource` 组合 base DBC1 和 committed WAL tail：
+`CloudTableSource` 组合 compacted DBC1 和 committed WAL tail：
 
 ```text
 CloudTableSource
-  ├── TableSource(format, files, data_files)
+  ├── CompactedDataSource(format, files, compacted_data_files)
   └── WalTableSource(files, wal_files)
 ```
 
-现有 `TableSource(format, store, files)` 天然是 snapshot-level object。node 长期缓存的是
+现有 `CloudTableSource(format, snapshot, files)` 天然是 snapshot-level object。node 长期缓存的是
 `CloudTable` handle；每次查询创建短生命周期 source，避免 manifest 切换污染在途查询。
 
 ---
@@ -266,7 +270,7 @@ struct CloudRuntime {
 |---|---|
 | `Catalog` | SQL 名称到 TableDescriptor |
 | `CloudTable` | 长生命周期 Table handle |
-| `TableMetadataStore` | CURRENT/commit/epoch/rebase 领域协议 |
+| `TableCurrentStateStore` | CURRENT/commit/epoch/rebase 领域协议 |
 | `IMetadataStore` | versioned KV + CAS |
 | `S3MetadataStore` | metadata CAS 到 S3 条件请求的 adapter |
 | `IStorage` | file locator + byte-range IO |
@@ -274,14 +278,14 @@ struct CloudRuntime {
 | `CachedStorage` | read-through file cache decorator |
 | `IFileCache` | RAM/NVMe cache policy |
 | `TableSnapshot` | 一次查询固定的 metadata view |
-| `CloudTableSource` | base DBC1 + WAL tail |
+| `CloudTableSource` | compacted DBC1 + WAL tail |
 
 核心职责链：
 
 ```text
 Catalog 找到 Table
-TableMetadataStore 找到 Snapshot
-CloudTableSource 组合 base + WAL
+TableCurrentStateStore 找到 Snapshot
+CloudTableSource 组合 compacted data + WAL
 IFileFormat 解释文件 bytes
 IStorage 提供 byte ranges
 IMetadataStore 提供单 key CAS
@@ -292,8 +296,8 @@ IMetadataStore 提供单 key CAS
 ## 12. 第一阶段实施顺序
 
 1. 独立 `IMetadataStore` + `MemMetadataStore`，验证 CAS、stale generation 和 ABA；
-2. `TableState` / immutable `CommitRecord` codec；
-3. `TableMetadataStore` 创建、writer epoch、publish、rebase；
+2. `CurrentTableState` / immutable `CommitRecord` codec；
+3. `TableCurrentStateStore` 创建、writer epoch、publish、rebase；
 4. WAL file codec 与 `CloudTableSource` 强一致读取；
 5. WAL → DBC1 compaction；
 6. `CachedStorage` 与 file cache；
@@ -304,25 +308,25 @@ IMetadataStore 提供单 key CAS
 
 ## 13. CURRENT 首版协议
 
-首版 `CURRENT` 直接保存完整且有界的 `TableState`，而不是只保存 manifest 文件名：
+首版 `CURRENT` 直接保存完整且有界的 `CurrentTableState`，而不是只保存 manifest 文件名：
 
 ```text
-TableState {
+CurrentTableState {
   format_version
   table_id
-  state_version
+  current_state_version
   writer_epoch
   committed_cursor
-  indexed_cursor
-  base_manifest
-  commit_head
+  compacted_cursor
+  compacted_data_manifest_key
+  latest_commit_key
 }
 ```
 
 这里有两种不同的版本，不能混淆：
 
 - `MetadataVersion` 是 `IMetadataStore` 返回的不透明 CAS token；S3 实现中通常对应 ETag；
-- `state_version` 是 Table 领域中可读、单调加一的状态版本，用于诊断和验证状态迁移。
+- `current_state_version` 是 Table 领域中可读、单调加一的状态版本，用于诊断和验证状态迁移。
 
 CURRENT key 由 `metadata_prefix + "/CURRENT"` 确定。创建使用 `PutIfAbsent`，发布使用读取时得到的
 `MetadataVersion` 做 `CompareExchange`，因此读取和写入都不需要 LIST。
@@ -332,14 +336,14 @@ CURRENT key 由 `metadata_prefix + "/CURRENT"` 确定。创建使用 `PutIfAbsen
 
 每次 publish 必须满足：
 
-- `state_version` 恰好加一；
-- `writer_epoch`、`committed_cursor`、`indexed_cursor` 不倒退；
-- `indexed_cursor <= committed_cursor`；
+- `current_state_version` 恰好加一；
+- `writer_epoch`、`committed_cursor`、`compacted_cursor` 不倒退；
+- `compacted_cursor <= committed_cursor`；
 - `table_id` 和 format version 不变。
 
-上层不直接调用通用的 `Publish(TableState)`。当前公开的领域操作是：
+上层不直接调用通用的 `Publish(CurrentTableState)`。当前公开的领域操作是：
 
-- `AcquireWriter`：只把 `writer_epoch` 和 `state_version` 各加一；
+- `AcquireWriter`：只把 `writer_epoch` 和 `current_state_version` 各加一；
 - `PublishWal`：验证 epoch、连续 cursor 和 parent commit，先幂等创建 immutable commit record，
   再 CAS CURRENT。
 

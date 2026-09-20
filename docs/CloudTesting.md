@@ -30,7 +30,7 @@ The cloud protocol is fully exercised on in-memory fakes (`MemStorage`,
 ```bash
 # Build + run a single suite (the friendly target builds then runs it):
 ninja -C build CloudPathTest             # end-to-end import/query/compaction, in memory
-ninja -C build TableMetadataStoreTest    # CURRENT CAS protocol, fencing, publish/rebase
+ninja -C build TableCurrentStateStoreTest    # CURRENT CAS protocol, fencing, publish/rebase
 ninja -C build WalFileFormatTest         # WAL codec round-trip + corruption
 ninja -C build RowCodecTest              # row encode/decode + truncation guards
 

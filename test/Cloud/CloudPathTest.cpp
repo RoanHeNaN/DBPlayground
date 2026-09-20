@@ -10,10 +10,10 @@
 #include "Cloud/CloudTable.h"
 #include "Cloud/IBatchCommitResolver.h"
 #include "Cloud/ICloudCatalog.h"
-#include "Cloud/IManifestStore.h"
+#include "Cloud/ICompactedDataManifestStore.h"
 #include "Cloud/IObjectKeyGenerator.h"
 #include "Cloud/IWriterRouting.h"
-#include "Cloud/MetadataManifestStore.h"
+#include "Cloud/MetadataCompactedDataManifestStore.h"
 #include "Execution/ScanExecutor.h"
 #include "Metadata/MemMetadataStore.h"
 #include "Metadata/TableMetadataCodec.h"
@@ -62,22 +62,25 @@ class NoListStorage : public IStorage {
   MemStorage storage_;
 };
 
-class EmptyManifestStore : public IManifestStore {
+class EmptyCompactedDataManifestStore : public ICompactedDataManifestStore {
  public:
-  std::optional<BaseManifest> Load(const TableDescriptor &, const std::string &) const override { return std::nullopt; }
+  std::optional<CompactedDataManifest> Load(const TableDescriptor &, const std::string &) const override {
+    return std::nullopt;
+  }
 };
 
-class FixedManifestStore : public IManifestStore {
+class FixedCompactedDataManifestStore : public ICompactedDataManifestStore {
  public:
-  FixedManifestStore(std::string key, BaseManifest manifest) : key_(std::move(key)), manifest_(std::move(manifest)) {}
+  FixedCompactedDataManifestStore(std::string key, CompactedDataManifest manifest)
+      : key_(std::move(key)), manifest_(std::move(manifest)) {}
 
-  std::optional<BaseManifest> Load(const TableDescriptor &, const std::string &key) const override {
-    return key == key_ ? std::optional<BaseManifest>(manifest_) : std::nullopt;
+  std::optional<CompactedDataManifest> Load(const TableDescriptor &, const std::string &key) const override {
+    return key == key_ ? std::optional<CompactedDataManifest>(manifest_) : std::nullopt;
   }
 
  private:
   std::string key_;
-  BaseManifest manifest_;
+  CompactedDataManifest manifest_;
 };
 
 class SequenceKeys : public IObjectKeyGenerator {
@@ -86,8 +89,10 @@ class SequenceKeys : public IObjectKeyGenerator {
   std::string NewCommitKey(const std::string &) override {
     return "commit/" + std::to_string(next_commit_++) + ".meta";
   }
-  std::string NewDataFileKey(const std::string &) override { return "data/" + std::to_string(next_data_++) + ".dbc1"; }
-  std::string NewManifestKey(const std::string &) override {
+  std::string NewCompactedDataFileKey(const std::string &) override {
+    return "data/" + std::to_string(next_data_++) + ".dbc1";
+  }
+  std::string NewCompactedDataManifestKey(const std::string &) override {
     return "manifest/" + std::to_string(next_manifest_++) + ".meta";
   }
 
@@ -100,7 +105,7 @@ class SequenceKeys : public IObjectKeyGenerator {
 
 class NeverCommittedBatches : public IBatchCommitResolver {
  public:
-  BatchCommitStatus Lookup(const TableDescriptor &, const VersionedTableState &,
+  BatchCommitStatus Lookup(const TableDescriptor &, const VersionedCurrentTableState &,
                            const std::vector<std::string> &) const override {
     return BatchCommitStatus::NotCommitted;
   }
@@ -191,12 +196,14 @@ TEST(CloudPathTest, ImportIsImmediatelyVisibleWithoutListAndSnapshotsAreImmutabl
 
   auto files = std::make_shared<NoListStorage>();
   auto metadata = std::make_shared<MemMetadataStore>();
-  auto manifests = std::make_shared<MetadataManifestStore>(descriptor.table_id, descriptor.metadata_prefix, metadata);
-  auto base_format = std::make_shared<NativeColumnarFileFormat>(descriptor.schema);
+  auto compacted_data_manifest_store =
+      std::make_shared<MetadataCompactedDataManifestStore>(descriptor.table_id, descriptor.metadata_prefix, metadata);
+  auto compacted_data_format = std::make_shared<NativeColumnarFileFormat>(descriptor.schema);
   auto wal_format = std::make_shared<WalFileFormat>(descriptor.schema);
   auto keys = std::make_shared<SequenceKeys>();
   auto batches = std::make_shared<NeverCommittedBatches>();
-  auto table = std::make_shared<CloudTable>(descriptor, files, metadata, manifests, base_format, wal_format);
+  auto table = std::make_shared<CloudTable>(descriptor, files, metadata, compacted_data_manifest_store,
+                                            compacted_data_format, wal_format);
 
   auto coordinator = std::make_shared<WriterCoordinator>(table->NewWriter(keys, batches));
   ASSERT_EQ(coordinator->Start().code, CloudWriterStartCode::Started);
@@ -243,7 +250,7 @@ TEST(CloudPathTest, ImportIsImmediatelyVisibleWithoutListAndSnapshotsAreImmutabl
 
   const auto compacted = table->NewCompactor(keys)->Compact();
   ASSERT_EQ(compacted.code, CloudCompactCode::Compacted);
-  EXPECT_EQ(compacted.indexed_cursor, 2u);
+  EXPECT_EQ(compacted.compacted_cursor, 2u);
   EXPECT_EQ(compacted.committed_cursor, 2u);
 
   CloudImportBatch third;
@@ -261,9 +268,9 @@ TEST(CloudPathTest, ImportIsImmediatelyVisibleWithoutListAndSnapshotsAreImmutabl
 
   const auto snapshot = table->LoadSnapshot();
   ASSERT_TRUE(snapshot.has_value());
-  EXPECT_EQ(snapshot->indexed_cursor, 2u);
+  EXPECT_EQ(snapshot->compacted_cursor, 2u);
   EXPECT_EQ(snapshot->committed_cursor, 3u);
-  EXPECT_EQ(snapshot->data_files.size(), 1u);
+  EXPECT_EQ(snapshot->compacted_data_files.size(), 1u);
   EXPECT_EQ(snapshot->wal_files.size(), 1u);
 }
 
@@ -297,30 +304,31 @@ TEST(CloudPathTest, MissingCatalogEntriesFailBeforeRoutingOrOpeningStorage) {
   EXPECT_EQ(queries.Open({"missing", "table"}), nullptr);
 }
 
-TEST(CloudPathTest, QueryCombinesCompactedBaseWithCommittedWalTail) {
+TEST(CloudPathTest, QueryCombinesCompactedDataWithCommittedWalTail) {
   TableDescriptor descriptor;
   descriptor.table_id = "tenant-a/events";
   descriptor.metadata_prefix = "tables/tenant-a/events/metadata";
   descriptor.file_prefix = "tables/tenant-a/events/files";
   descriptor.schema = TestSchema();
 
-  const std::string base_file = descriptor.file_prefix + "/data/base-1.dbc1";
+  const std::string compacted_data_file = descriptor.file_prefix + "/data/compacted-1.dbc1";
   const std::string wal_file = descriptor.file_prefix + "/wal/2.wal";
-  const std::string manifest_key = "manifest/base-1.meta";
+  const std::string compacted_data_manifest_key = "manifest/compacted-1.meta";
   const std::string commit_key = "commit/2.meta";
 
   auto files = std::make_shared<NoListStorage>();
   auto metadata = std::make_shared<MemMetadataStore>();
-  auto base_format = std::make_shared<NativeColumnarFileFormat>(descriptor.schema);
+  auto compacted_data_format = std::make_shared<NativeColumnarFileFormat>(descriptor.schema);
   auto wal_format = std::make_shared<WalFileFormat>(descriptor.schema);
-  WriteFile(*base_format, *files, base_file, MakeChunk(0, 2));
+  WriteFile(*compacted_data_format, *files, compacted_data_file, MakeChunk(0, 2));
   WriteFile(*wal_format, *files, wal_file, MakeChunk(100, 2));
 
-  BaseManifest manifest;
+  CompactedDataManifest manifest;
   manifest.table_id = descriptor.table_id;
-  manifest.indexed_cursor = 1;
-  manifest.data_files = {base_file};
-  auto manifests = std::make_shared<FixedManifestStore>(manifest_key, manifest);
+  manifest.compacted_cursor = 1;
+  manifest.compacted_data_files = {compacted_data_file};
+  auto compacted_data_manifest_store =
+      std::make_shared<FixedCompactedDataManifestStore>(compacted_data_manifest_key, manifest);
 
   CommitRecord commit;
   commit.table_id = descriptor.table_id;
@@ -333,19 +341,19 @@ TEST(CloudPathTest, QueryCombinesCompactedBaseWithCommittedWalTail) {
   ASSERT_EQ(metadata->PutIfAbsent(descriptor.metadata_prefix + "/" + commit_key, Slice(encoded_commit), nullptr),
             ConditionalWriteResult::Applied);
 
-  TableState state;
+  CurrentTableState state;
   state.table_id = descriptor.table_id;
-  state.state_version = 7;
+  state.current_state_version = 7;
   state.writer_epoch = 3;
-  state.indexed_cursor = 1;
+  state.compacted_cursor = 1;
   state.committed_cursor = 2;
-  state.base_manifest = manifest_key;
-  state.commit_head = commit_key;
-  const std::string encoded_state = TableMetadataCodec::EncodeTableState(state);
+  state.compacted_data_manifest_key = compacted_data_manifest_key;
+  state.latest_commit_key = commit_key;
+  const std::string encoded_state = TableMetadataCodec::EncodeCurrentTableState(state);
   ASSERT_EQ(metadata->PutIfAbsent(descriptor.metadata_prefix + "/CURRENT", Slice(encoded_state), nullptr),
             ConditionalWriteResult::Applied);
 
-  CloudTable table(descriptor, files, metadata, manifests, base_format, wal_format);
+  CloudTable table(descriptor, files, metadata, compacted_data_manifest_store, compacted_data_format, wal_format);
   auto source = table.OpenSnapshot();
   ASSERT_NE(source, nullptr);
   auto rows = CollectProjected(*source, {0});
@@ -365,11 +373,11 @@ TEST(CloudPathTest, OldCloudWriterStopsAfterAnotherWriterAcquiresTheTable) {
 
   auto files = std::make_shared<NoListStorage>();
   auto metadata = std::make_shared<MemMetadataStore>();
-  auto manifests = std::make_shared<EmptyManifestStore>();
-  auto base_format = std::make_shared<NativeColumnarFileFormat>(descriptor.schema);
+  auto compacted_data_manifest_store = std::make_shared<EmptyCompactedDataManifestStore>();
+  auto compacted_data_format = std::make_shared<NativeColumnarFileFormat>(descriptor.schema);
   auto wal_format = std::make_shared<WalFileFormat>(descriptor.schema);
   auto batches = std::make_shared<NeverCommittedBatches>();
-  CloudTable table(descriptor, files, metadata, manifests, base_format, wal_format);
+  CloudTable table(descriptor, files, metadata, compacted_data_manifest_store, compacted_data_format, wal_format);
 
   auto old_writer = table.NewWriter(std::make_shared<SequenceKeys>(), batches);
   ASSERT_EQ(old_writer->Start().code, CloudWriterStartCode::Started);

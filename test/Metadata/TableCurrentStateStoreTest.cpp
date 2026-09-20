@@ -7,33 +7,33 @@
 #include <vector>
 
 #include "Metadata/MemMetadataStore.h"
+#include "Metadata/TableCurrentStateStore.h"
 #include "Metadata/TableMetadataCodec.h"
-#include "Metadata/TableMetadataStore.h"
 #include "gtest/gtest.h"
 
 namespace dbplay {
 namespace {
 
-TableState InitializedState(TableMetadataStore *tables) {
-  VersionedTableState created;
-  EXPECT_EQ(tables->Initialize(tables->NewTableState(), &created), InitializeTableResult::Created);
-  return created.state;
+CurrentTableState InitializedCurrentState(TableCurrentStateStore *tables) {
+  VersionedCurrentTableState created;
+  EXPECT_EQ(tables->Initialize(tables->NewCurrentTableState(), &created), InitializeTableResult::Created);
+  return created.current_state;
 }
 
 }  // namespace
 
-TEST(TableMetadataCodecTest, RoundTripsTableState) {
-  TableState state;
+TEST(TableMetadataCodecTest, RoundTripsCurrentTableState) {
+  CurrentTableState state;
   state.table_id = "tenant-a/events";
-  state.state_version = 42;
+  state.current_state_version = 42;
   state.writer_epoch = 7;
   state.committed_cursor = 1042;
-  state.indexed_cursor = 1038;
-  state.base_manifest = "manifest/base-1038.meta";
-  state.commit_head = "commit/1042-uuid.meta";
+  state.compacted_cursor = 1038;
+  state.compacted_data_manifest_key = "manifest/compacted-1038.meta";
+  state.latest_commit_key = "commit/1042-uuid.meta";
 
-  const std::string encoded = TableMetadataCodec::EncodeTableState(state);
-  EXPECT_EQ(TableMetadataCodec::DecodeTableState(Slice(encoded)), state);
+  const std::string encoded = TableMetadataCodec::EncodeCurrentTableState(state);
+  EXPECT_EQ(TableMetadataCodec::DecodeCurrentTableState(Slice(encoded)), state);
 }
 
 TEST(TableMetadataCodecTest, RoundTripsCommitRecord) {
@@ -42,7 +42,7 @@ TEST(TableMetadataCodecTest, RoundTripsCommitRecord) {
   record.writer_epoch = 7;
   record.first_cursor = 1039;
   record.last_cursor = 1042;
-  record.parent_commit = "commit/1038-parent.meta";
+  record.parent_commit_key = "commit/1038-parent.meta";
   record.wal_files = {"wal/1039-1040.wal", "wal/1041-1042.wal"};
   record.batch_ids = {"client-batch-a", "client-batch-b"};
 
@@ -51,87 +51,87 @@ TEST(TableMetadataCodecTest, RoundTripsCommitRecord) {
 }
 
 TEST(TableMetadataCodecTest, RejectsCorruptionAndInvalidState) {
-  TableState state;
+  CurrentTableState state;
   state.table_id = "table-a";
-  std::string encoded = TableMetadataCodec::EncodeTableState(state);
+  std::string encoded = TableMetadataCodec::EncodeCurrentTableState(state);
 
   std::string truncated = encoded.substr(0, encoded.size() - 1);
-  EXPECT_THROW(TableMetadataCodec::DecodeTableState(Slice(truncated)), std::invalid_argument);
+  EXPECT_THROW(TableMetadataCodec::DecodeCurrentTableState(Slice(truncated)), std::invalid_argument);
 
   encoded.push_back('x');
-  EXPECT_THROW(TableMetadataCodec::DecodeTableState(Slice(encoded)), std::invalid_argument);
+  EXPECT_THROW(TableMetadataCodec::DecodeCurrentTableState(Slice(encoded)), std::invalid_argument);
 
-  state.indexed_cursor = 2;
+  state.compacted_cursor = 2;
   state.committed_cursor = 1;
-  EXPECT_THROW(TableMetadataCodec::EncodeTableState(state), std::invalid_argument);
+  EXPECT_THROW(TableMetadataCodec::EncodeCurrentTableState(state), std::invalid_argument);
 }
 
-TEST(TableMetadataCodecTest, RoundTripsBaseManifest) {
-  BaseManifest manifest;
+TEST(TableMetadataCodecTest, RoundTripsCompactedDataManifest) {
+  CompactedDataManifest manifest;
   manifest.table_id = "tenant-a/events";
-  manifest.indexed_cursor = 1038;
-  manifest.data_files = {"data/base-a.dbc1", "data/base-b.dbc1"};
+  manifest.compacted_cursor = 1038;
+  manifest.compacted_data_files = {"data/compacted-a.dbc1", "data/compacted-b.dbc1"};
 
-  const std::string encoded = TableMetadataCodec::EncodeBaseManifest(manifest);
-  EXPECT_EQ(TableMetadataCodec::DecodeBaseManifest(Slice(encoded)), manifest);
+  const std::string encoded = TableMetadataCodec::EncodeCompactedDataManifest(manifest);
+  EXPECT_EQ(TableMetadataCodec::DecodeCompactedDataManifest(Slice(encoded)), manifest);
 }
 
-TEST(TableMetadataStoreTest, InitializesAndLoadsCurrentWithoutList) {
+TEST(TableCurrentStateStoreTest, InitializesAndLoadsCurrentWithoutList) {
   auto metadata = std::make_shared<MemMetadataStore>();
-  TableMetadataStore tables("table-a", "tables/table-a/", metadata);
+  TableCurrentStateStore tables("table-a", "tables/table-a/", metadata);
   EXPECT_EQ(tables.current_key(), "tables/table-a/CURRENT");
   EXPECT_FALSE(tables.Load().has_value());
 
-  VersionedTableState created;
-  const TableState initial = tables.NewTableState();
+  VersionedCurrentTableState created;
+  const CurrentTableState initial = tables.NewCurrentTableState();
   EXPECT_EQ(tables.Initialize(initial, &created), InitializeTableResult::Created);
   EXPECT_EQ(tables.Initialize(initial), InitializeTableResult::AlreadyExists);
 
   const auto loaded = tables.Load();
   ASSERT_TRUE(loaded.has_value());
-  EXPECT_EQ(loaded->state, initial);
-  EXPECT_EQ(loaded->metadata_version, created.metadata_version);
+  EXPECT_EQ(loaded->current_state, initial);
+  EXPECT_EQ(loaded->current_metadata_version, created.current_metadata_version);
 }
 
-TEST(TableMetadataStoreTest, PublishesWithCurrentVersionAndRejectsStaleWriter) {
+TEST(TableCurrentStateStoreTest, PublishesWithCurrentVersionAndRejectsStaleWriter) {
   auto metadata = std::make_shared<MemMetadataStore>();
-  TableMetadataStore tables("table-a", "tables/table-a", metadata);
-  ASSERT_EQ(tables.Initialize(tables.NewTableState()), InitializeTableResult::Created);
-  const VersionedTableState initial = *tables.Load();
+  TableCurrentStateStore tables("table-a", "tables/table-a", metadata);
+  ASSERT_EQ(tables.Initialize(tables.NewCurrentTableState()), InitializeTableResult::Created);
+  const VersionedCurrentTableState initial = *tables.Load();
 
-  VersionedTableState owner;
+  VersionedCurrentTableState owner;
   ASSERT_EQ(tables.AcquireWriter(initial, &owner), AcquireWriterResult::Acquired);
   EXPECT_EQ(tables.AcquireWriter(initial), AcquireWriterResult::StaleVersion);
 
   CommitRecord record;
   record.table_id = "table-a";
-  record.writer_epoch = owner.state.writer_epoch;
+  record.writer_epoch = owner.current_state.writer_epoch;
   record.first_cursor = 1;
   record.last_cursor = 1;
   record.wal_files = {"wal/1.wal"};
   record.batch_ids = {"batch-1"};
-  VersionedTableState committed;
+  VersionedCurrentTableState committed;
   ASSERT_EQ(tables.PublishWal(owner, "commit/1.meta", record, &committed), PublishWalResult::Committed);
-  EXPECT_EQ(committed.state.committed_cursor, 1u);
-  EXPECT_EQ(committed.state.commit_head, "commit/1.meta");
+  EXPECT_EQ(committed.current_state.committed_cursor, 1u);
+  EXPECT_EQ(committed.current_state.latest_commit_key, "commit/1.meta");
   ASSERT_TRUE(tables.LoadCommitRecord("commit/1.meta").has_value());
   EXPECT_EQ(*tables.LoadCommitRecord("commit/1.meta"), record);
 
-  VersionedTableState recovered;
+  VersionedCurrentTableState recovered;
   EXPECT_EQ(tables.PublishWal(owner, "commit/1.meta", record, &recovered), PublishWalResult::AlreadyCommitted);
-  EXPECT_EQ(recovered.state, committed.state);
+  EXPECT_EQ(recovered.current_state, committed.current_state);
 }
 
-TEST(TableMetadataStoreTest, RejectsInvalidCommitBeforeCas) {
+TEST(TableCurrentStateStoreTest, RejectsInvalidCommitBeforeCas) {
   auto metadata = std::make_shared<MemMetadataStore>();
-  TableMetadataStore tables("table-a", "tables/table-a", metadata);
-  ASSERT_EQ(tables.Initialize(tables.NewTableState()), InitializeTableResult::Created);
-  VersionedTableState owner;
+  TableCurrentStateStore tables("table-a", "tables/table-a", metadata);
+  ASSERT_EQ(tables.Initialize(tables.NewCurrentTableState()), InitializeTableResult::Created);
+  VersionedCurrentTableState owner;
   ASSERT_EQ(tables.AcquireWriter(*tables.Load(), &owner), AcquireWriterResult::Acquired);
 
   CommitRecord invalid;
   invalid.table_id = "table-a";
-  invalid.writer_epoch = owner.state.writer_epoch;
+  invalid.writer_epoch = owner.current_state.writer_epoch;
   invalid.first_cursor = 2;
   invalid.last_cursor = 2;
   invalid.wal_files = {"wal/2.wal"};
@@ -142,14 +142,14 @@ TEST(TableMetadataStoreTest, RejectsInvalidCommitBeforeCas) {
   invalid.table_id = "table-b";
   EXPECT_EQ(tables.PublishWal(owner, "commit/1.meta", invalid), PublishWalResult::InvalidCommit);
   EXPECT_FALSE(tables.LoadCommitRecord("commit/1.meta").has_value());
-  EXPECT_EQ(tables.Load()->state, owner.state);
+  EXPECT_EQ(tables.Load()->current_state, owner.current_state);
 }
 
-TEST(TableMetadataStoreTest, ConcurrentPublishHasExactlyOneWinner) {
+TEST(TableCurrentStateStoreTest, ConcurrentPublishHasExactlyOneWinner) {
   auto metadata = std::make_shared<MemMetadataStore>();
-  TableMetadataStore tables("table-a", "tables/table-a", metadata);
-  ASSERT_EQ(tables.Initialize(tables.NewTableState()), InitializeTableResult::Created);
-  VersionedTableState owner;
+  TableCurrentStateStore tables("table-a", "tables/table-a", metadata);
+  ASSERT_EQ(tables.Initialize(tables.NewCurrentTableState()), InitializeTableResult::Created);
+  VersionedCurrentTableState owner;
   ASSERT_EQ(tables.AcquireWriter(*tables.Load(), &owner), AcquireWriterResult::Acquired);
 
   constexpr size_t kThreads = 64;
@@ -163,7 +163,7 @@ TEST(TableMetadataStoreTest, ConcurrentPublishHasExactlyOneWinner) {
       }
       CommitRecord record;
       record.table_id = "table-a";
-      record.writer_epoch = owner.state.writer_epoch;
+      record.writer_epoch = owner.current_state.writer_epoch;
       record.first_cursor = 1;
       record.last_cursor = 1;
       record.wal_files = {"wal/writer-" + std::to_string(i) + ".wal"};
@@ -182,65 +182,65 @@ TEST(TableMetadataStoreTest, ConcurrentPublishHasExactlyOneWinner) {
   }
   EXPECT_EQ(applied.load(), 1u);
   EXPECT_EQ(rebase_required.load(), kThreads - 1);
-  EXPECT_EQ(tables.Load()->state.committed_cursor, 1u);
+  EXPECT_EQ(tables.Load()->current_state.committed_cursor, 1u);
 }
 
-TEST(TableMetadataStoreTest, OldWriterIsFencedAfterNewEpochIsAcquired) {
+TEST(TableCurrentStateStoreTest, OldWriterIsFencedAfterNewEpochIsAcquired) {
   auto metadata = std::make_shared<MemMetadataStore>();
-  TableMetadataStore tables("table-a", "tables/table-a", metadata);
-  ASSERT_EQ(tables.Initialize(tables.NewTableState()), InitializeTableResult::Created);
+  TableCurrentStateStore tables("table-a", "tables/table-a", metadata);
+  ASSERT_EQ(tables.Initialize(tables.NewCurrentTableState()), InitializeTableResult::Created);
 
-  VersionedTableState old_writer;
+  VersionedCurrentTableState old_writer;
   ASSERT_EQ(tables.AcquireWriter(*tables.Load(), &old_writer), AcquireWriterResult::Acquired);
-  VersionedTableState new_writer;
+  VersionedCurrentTableState new_writer;
   ASSERT_EQ(tables.AcquireWriter(old_writer, &new_writer), AcquireWriterResult::Acquired);
 
   CommitRecord stale_record;
   stale_record.table_id = "table-a";
-  stale_record.writer_epoch = old_writer.state.writer_epoch;
+  stale_record.writer_epoch = old_writer.current_state.writer_epoch;
   stale_record.first_cursor = 1;
   stale_record.last_cursor = 1;
   stale_record.wal_files = {"wal/stale.wal"};
   stale_record.batch_ids = {"stale-batch"};
   EXPECT_EQ(tables.PublishWal(old_writer, "commit/stale.meta", stale_record), PublishWalResult::Fenced);
-  EXPECT_EQ(tables.Load()->state.writer_epoch, new_writer.state.writer_epoch);
+  EXPECT_EQ(tables.Load()->current_state.writer_epoch, new_writer.current_state.writer_epoch);
 }
 
-TEST(TableMetadataStoreTest, CommittedResponseCanBeRecoveredAfterEpochAdvances) {
+TEST(TableCurrentStateStoreTest, CommittedResponseCanBeRecoveredAfterEpochAdvances) {
   auto metadata = std::make_shared<MemMetadataStore>();
-  TableMetadataStore tables("table-a", "tables/table-a", metadata);
-  ASSERT_EQ(tables.Initialize(tables.NewTableState()), InitializeTableResult::Created);
+  TableCurrentStateStore tables("table-a", "tables/table-a", metadata);
+  ASSERT_EQ(tables.Initialize(tables.NewCurrentTableState()), InitializeTableResult::Created);
 
-  VersionedTableState writer;
+  VersionedCurrentTableState writer;
   ASSERT_EQ(tables.AcquireWriter(*tables.Load(), &writer), AcquireWriterResult::Acquired);
   CommitRecord record;
   record.table_id = "table-a";
-  record.writer_epoch = writer.state.writer_epoch;
+  record.writer_epoch = writer.current_state.writer_epoch;
   record.first_cursor = 1;
   record.last_cursor = 1;
   record.wal_files = {"wal/1.wal"};
   record.batch_ids = {"batch-1"};
   ASSERT_EQ(tables.PublishWal(writer, "commit/1.meta", record), PublishWalResult::Committed);
 
-  VersionedTableState next_writer;
+  VersionedCurrentTableState next_writer;
   ASSERT_EQ(tables.AcquireWriter(*tables.Load(), &next_writer), AcquireWriterResult::Acquired);
-  EXPECT_GT(next_writer.state.writer_epoch, writer.state.writer_epoch);
+  EXPECT_GT(next_writer.current_state.writer_epoch, writer.current_state.writer_epoch);
 
-  VersionedTableState recovered;
+  VersionedCurrentTableState recovered;
   EXPECT_EQ(tables.PublishWal(writer, "commit/1.meta", record, &recovered), PublishWalResult::AlreadyCommitted);
-  EXPECT_EQ(recovered.state.writer_epoch, next_writer.state.writer_epoch);
+  EXPECT_EQ(recovered.current_state.writer_epoch, next_writer.current_state.writer_epoch);
 }
 
-TEST(TableMetadataStoreTest, ReusedCommitKeyMustContainIdenticalRecord) {
+TEST(TableCurrentStateStoreTest, ReusedCommitKeyMustContainIdenticalRecord) {
   auto metadata = std::make_shared<MemMetadataStore>();
-  TableMetadataStore tables("table-a", "tables/table-a", metadata);
-  ASSERT_EQ(tables.Initialize(tables.NewTableState()), InitializeTableResult::Created);
-  VersionedTableState owner;
+  TableCurrentStateStore tables("table-a", "tables/table-a", metadata);
+  ASSERT_EQ(tables.Initialize(tables.NewCurrentTableState()), InitializeTableResult::Created);
+  VersionedCurrentTableState owner;
   ASSERT_EQ(tables.AcquireWriter(*tables.Load(), &owner), AcquireWriterResult::Acquired);
 
   CommitRecord first;
   first.table_id = "table-a";
-  first.writer_epoch = owner.state.writer_epoch;
+  first.writer_epoch = owner.current_state.writer_epoch;
   first.first_cursor = 1;
   first.last_cursor = 1;
   first.wal_files = {"wal/first.wal"};
@@ -252,91 +252,91 @@ TEST(TableMetadataStoreTest, ReusedCommitKeyMustContainIdenticalRecord) {
   EXPECT_EQ(tables.PublishWal(owner, "commit/fixed.meta", different), PublishWalResult::CommitKeyCollision);
 }
 
-TEST(TableMetadataStoreTest, TablePrefixesAreIndependent) {
+TEST(TableCurrentStateStoreTest, TablePrefixesAreIndependent) {
   auto metadata = std::make_shared<MemMetadataStore>();
-  TableMetadataStore a("table-a", "tables/table-a", metadata);
-  TableMetadataStore b("table-b", "tables/table-b", metadata);
+  TableCurrentStateStore a("table-a", "tables/table-a", metadata);
+  TableCurrentStateStore b("table-b", "tables/table-b", metadata);
 
-  EXPECT_EQ(a.Initialize(a.NewTableState()), InitializeTableResult::Created);
-  EXPECT_EQ(b.Initialize(b.NewTableState()), InitializeTableResult::Created);
-  EXPECT_EQ(a.Load()->state.table_id, "table-a");
-  EXPECT_EQ(b.Load()->state.table_id, "table-b");
+  EXPECT_EQ(a.Initialize(a.NewCurrentTableState()), InitializeTableResult::Created);
+  EXPECT_EQ(b.Initialize(b.NewCurrentTableState()), InitializeTableResult::Created);
+  EXPECT_EQ(a.Load()->current_state.table_id, "table-a");
+  EXPECT_EQ(b.Load()->current_state.table_id, "table-b");
 }
 
-TEST(TableMetadataStoreTest, PublishesCompactionWithoutChangingCommitHead) {
+TEST(TableCurrentStateStoreTest, PublishesCompactionWithoutChangingCommitHead) {
   auto metadata = std::make_shared<MemMetadataStore>();
-  TableMetadataStore tables("table-a", "tables/table-a", metadata);
-  ASSERT_EQ(tables.Initialize(tables.NewTableState()), InitializeTableResult::Created);
-  VersionedTableState owner;
+  TableCurrentStateStore tables("table-a", "tables/table-a", metadata);
+  ASSERT_EQ(tables.Initialize(tables.NewCurrentTableState()), InitializeTableResult::Created);
+  VersionedCurrentTableState owner;
   ASSERT_EQ(tables.AcquireWriter(*tables.Load(), &owner), AcquireWriterResult::Acquired);
 
   CommitRecord record;
   record.table_id = "table-a";
-  record.writer_epoch = owner.state.writer_epoch;
+  record.writer_epoch = owner.current_state.writer_epoch;
   record.first_cursor = 1;
   record.last_cursor = 1;
   record.wal_files = {"wal/1.wal"};
   record.batch_ids = {"batch-1"};
-  VersionedTableState committed;
+  VersionedCurrentTableState committed;
   ASSERT_EQ(tables.PublishWal(owner, "commit/1.meta", record, &committed), PublishWalResult::Committed);
 
-  BaseManifest manifest;
+  CompactedDataManifest manifest;
   manifest.table_id = "table-a";
-  manifest.indexed_cursor = 1;
-  manifest.data_files = {"data/1.dbc1"};
-  VersionedTableState compacted;
+  manifest.compacted_cursor = 1;
+  manifest.compacted_data_files = {"data/1.dbc1"};
+  VersionedCurrentTableState compacted;
   ASSERT_EQ(tables.PublishCompaction(committed, "manifest/1.meta", manifest, &compacted),
             PublishCompactionResult::Published);
-  EXPECT_EQ(compacted.state.indexed_cursor, 1u);
-  EXPECT_EQ(compacted.state.committed_cursor, 1u);
-  EXPECT_EQ(compacted.state.commit_head, "commit/1.meta");
-  EXPECT_EQ(compacted.state.writer_epoch, committed.state.writer_epoch);
-  EXPECT_EQ(compacted.state.base_manifest, "manifest/1.meta");
-  ASSERT_TRUE(tables.LoadManifest("manifest/1.meta").has_value());
-  EXPECT_EQ(*tables.LoadManifest("manifest/1.meta"), manifest);
+  EXPECT_EQ(compacted.current_state.compacted_cursor, 1u);
+  EXPECT_EQ(compacted.current_state.committed_cursor, 1u);
+  EXPECT_EQ(compacted.current_state.latest_commit_key, "commit/1.meta");
+  EXPECT_EQ(compacted.current_state.writer_epoch, committed.current_state.writer_epoch);
+  EXPECT_EQ(compacted.current_state.compacted_data_manifest_key, "manifest/1.meta");
+  ASSERT_TRUE(tables.LoadCompactedDataManifest("manifest/1.meta").has_value());
+  EXPECT_EQ(*tables.LoadCompactedDataManifest("manifest/1.meta"), manifest);
 
   EXPECT_EQ(tables.PublishCompaction(committed, "manifest/1.meta", manifest),
             PublishCompactionResult::AlreadyPublished);
 }
 
-TEST(TableMetadataStoreTest, CompactionDoesNotFenceAConcurrentWriterAdvance) {
+TEST(TableCurrentStateStoreTest, CompactionDoesNotFenceAConcurrentWriterAdvance) {
   auto metadata = std::make_shared<MemMetadataStore>();
-  TableMetadataStore tables("table-a", "tables/table-a", metadata);
-  ASSERT_EQ(tables.Initialize(tables.NewTableState()), InitializeTableResult::Created);
-  VersionedTableState owner;
+  TableCurrentStateStore tables("table-a", "tables/table-a", metadata);
+  ASSERT_EQ(tables.Initialize(tables.NewCurrentTableState()), InitializeTableResult::Created);
+  VersionedCurrentTableState owner;
   ASSERT_EQ(tables.AcquireWriter(*tables.Load(), &owner), AcquireWriterResult::Acquired);
 
   CommitRecord first;
   first.table_id = "table-a";
-  first.writer_epoch = owner.state.writer_epoch;
+  first.writer_epoch = owner.current_state.writer_epoch;
   first.first_cursor = 1;
   first.last_cursor = 1;
   first.wal_files = {"wal/1.wal"};
   first.batch_ids = {"batch-1"};
-  VersionedTableState after_first;
+  VersionedCurrentTableState after_first;
   ASSERT_EQ(tables.PublishWal(owner, "commit/1.meta", first, &after_first), PublishWalResult::Committed);
 
   CommitRecord second = first;
   second.first_cursor = 2;
   second.last_cursor = 2;
-  second.parent_commit = "commit/1.meta";
+  second.parent_commit_key = "commit/1.meta";
   second.wal_files = {"wal/2.wal"};
   second.batch_ids = {"batch-2"};
-  VersionedTableState after_second;
+  VersionedCurrentTableState after_second;
   ASSERT_EQ(tables.PublishWal(after_first, "commit/2.meta", second, &after_second), PublishWalResult::Committed);
 
-  BaseManifest manifest;
+  CompactedDataManifest manifest;
   manifest.table_id = "table-a";
-  manifest.indexed_cursor = 1;
-  manifest.data_files = {"data/1.dbc1"};
+  manifest.compacted_cursor = 1;
+  manifest.compacted_data_files = {"data/1.dbc1"};
   EXPECT_EQ(tables.PublishCompaction(after_first, "manifest/1.meta", manifest), PublishCompactionResult::StaleVersion);
 
-  VersionedTableState compacted;
+  VersionedCurrentTableState compacted;
   ASSERT_EQ(tables.PublishCompaction(after_second, "manifest/1.meta", manifest, &compacted),
             PublishCompactionResult::Published);
-  EXPECT_EQ(compacted.state.indexed_cursor, 1u);
-  EXPECT_EQ(compacted.state.committed_cursor, 2u);
-  EXPECT_EQ(compacted.state.commit_head, "commit/2.meta");
+  EXPECT_EQ(compacted.current_state.compacted_cursor, 1u);
+  EXPECT_EQ(compacted.current_state.committed_cursor, 2u);
+  EXPECT_EQ(compacted.current_state.latest_commit_key, "commit/2.meta");
 }
 
 }  // namespace dbplay

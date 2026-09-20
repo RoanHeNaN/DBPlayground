@@ -8,6 +8,7 @@
 #include <stdexcept>
 
 #include "Cloud/S3/Sigv4.h"
+#include "glog/logging.h"
 
 namespace dbplay::s3 {
 namespace {
@@ -135,8 +136,10 @@ S3Response S3Client::Do(const std::string &method, const std::string &key,
   if (rc != CURLE_OK) {
     resp.transport_error = true;
     resp.body = curl_easy_strerror(rc);
+    VLOG(2) << "S3 " << method << " " << key << " transport error: " << resp.body;
   } else {
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &resp.status);
+    VLOG(2) << "S3 " << method << " " << key << " -> " << resp.status;
   }
 
   curl_slist_free_all(headers);
