@@ -29,8 +29,8 @@ The cloud protocol is fully exercised on in-memory fakes (`MemStorage`,
 
 ```bash
 # Build + run a single suite (the friendly target builds then runs it):
-ninja -C build CloudPathTest             # end-to-end import/query/compaction, in memory
-ninja -C build TableCurrentStateStoreTest    # CURRENT CAS protocol, fencing, publish/rebase
+ninja -C build CloudPathTest             # end-to-end import/query/WAL indexing, in memory
+ninja -C build TableCurrentStateStoreTest    # legacy metadata protocol compatibility
 ninja -C build WalFileFormatTest         # WAL codec round-trip + corruption
 ninja -C build RowCodecTest              # row encode/decode + truncation guards
 
@@ -50,7 +50,7 @@ no `MINIO_ENDPOINT` they `GTEST_SKIP`, so they are safe in the default run.
 |---|---|
 | `S3ClientSmokeTest` | SigV4 signing, conditional writes, range read, HEAD/DELETE/List |
 | `S3AdaptersTest` | `S3FileStorage` (IStorage) + `S3MetadataStore` (IMetadataStore) contracts |
-| `S3IntegrationTest` | Full CloudTable cycle: import → query → snapshot isolation → compaction → re-import, and second-writer fencing |
+| `S3IntegrationTest` | Sequential WAL cycle, deferred visibility, writer fencing, and concurrent writers with a strict reader |
 
 ### 3.1 Start MinIO
 

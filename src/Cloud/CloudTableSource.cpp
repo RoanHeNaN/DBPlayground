@@ -29,6 +29,31 @@ class CompositeBatchCursor : public IBatchCursor {
   bool reading_compacted_data_ = true;
 };
 
+class SnapshotWalCursor : public IBatchCursor {
+ public:
+  SnapshotWalCursor(std::vector<Chunk> chunks, std::vector<int> projection)
+      : chunks_(std::move(chunks)), projection_(std::move(projection)) {}
+
+  bool Next(Chunk *out) override {
+    if (pos_ == chunks_.size()) return false;
+    const Chunk &src = chunks_[pos_++];
+    out->column_ids = projection_;
+    out->columns.clear();
+    for (int column : projection_) {
+      if (column < 0 || static_cast<size_t>(column) >= src.columns.size())
+        throw std::out_of_range("CloudTableSource: invalid projection");
+      out->columns.push_back(src.columns[column]);
+    }
+    out->row_count = src.row_count;
+    return true;
+  }
+
+ private:
+  std::vector<Chunk> chunks_;
+  std::vector<int> projection_;
+  size_t pos_ = 0;
+};
+
 }  // namespace
 
 CloudTableSource::CloudTableSource(Schema schema, TableSnapshot snapshot,
@@ -47,7 +72,12 @@ CloudTableSource::CloudTableSource(Schema schema, TableSnapshot snapshot,
 
 std::unique_ptr<IBatchCursor> CloudTableSource::Scan(const std::vector<int> &projection) {
   auto compacted_data = compacted_data_format_->Scan(*files_, snapshot_.compacted_data_files, projection);
-  auto wal = wal_format_->Scan(*files_, snapshot_.wal_files, projection);
+  std::unique_ptr<IBatchCursor> wal;
+  if (snapshot_.sequential_wal) {
+    wal = std::make_unique<SnapshotWalCursor>(snapshot_.wal_chunks, projection);
+  } else {
+    wal = wal_format_->Scan(*files_, snapshot_.wal_files, projection);
+  }
   return std::make_unique<CompositeBatchCursor>(std::move(compacted_data), std::move(wal));
 }
 

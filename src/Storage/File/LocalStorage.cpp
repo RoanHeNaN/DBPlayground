@@ -4,6 +4,9 @@
 
 #include "Storage/File/LocalStorage.h"
 
+#include <unistd.h>
+
+#include <cerrno>
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
@@ -89,6 +92,41 @@ std::unique_ptr<IOutputStream> LocalStorage::OpenOutput(const std::string &path)
     throw std::runtime_error("LocalStorage: cannot create " + full);
   }
   return std::make_unique<LocalOutputStream>(std::move(out));
+}
+
+CreateFileResult LocalStorage::CreateIfAbsent(const std::string &path, const Slice &bytes) {
+  const std::string full = FullPath(path);
+  fs::create_directories(fs::path(full).parent_path());
+  std::string pattern = full + ".tmp.XXXXXX";
+  std::vector<char> name(pattern.begin(), pattern.end());
+  name.push_back('\0');
+  const int fd = ::mkstemp(name.data());
+  if (fd < 0) throw std::runtime_error("LocalStorage: mkstemp failed for " + full);
+  try {
+    size_t written = 0;
+    while (written < bytes.size()) {
+      const ssize_t n = ::write(fd, bytes.data() + written, bytes.size() - written);
+      if (n <= 0) throw std::runtime_error("LocalStorage: write failed for " + full);
+      written += static_cast<size_t>(n);
+    }
+    if (::fsync(fd) != 0) throw std::runtime_error("LocalStorage: fsync failed for " + full);
+    if (::link(name.data(), full.c_str()) == 0) {
+      ::close(fd);
+      ::unlink(name.data());
+      return CreateFileResult::Created;
+    }
+    const int error = errno;
+    if (error == EEXIST) {
+      ::close(fd);
+      ::unlink(name.data());
+      return CreateFileResult::AlreadyExists;
+    }
+    throw std::runtime_error("LocalStorage: link failed for " + full);
+  } catch (...) {
+    ::close(fd);
+    ::unlink(name.data());
+    throw;
+  }
 }
 
 bool LocalStorage::Exists(const std::string &path) const { return fs::is_regular_file(FullPath(path)); }

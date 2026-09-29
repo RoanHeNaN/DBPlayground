@@ -12,6 +12,7 @@
 #define DBPLAYGROUND_MEMSTORAGE_H
 
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -24,6 +25,7 @@ class MemStorage : public IStorage {
  public:
   std::unique_ptr<IInputFile> OpenInput(const std::string &path) override;
   std::unique_ptr<IOutputStream> OpenOutput(const std::string &path) override;
+  CreateFileResult CreateIfAbsent(const std::string &path, const Slice &bytes) override;
   bool Exists(const std::string &path) const override;
   std::vector<std::string> List(const std::string &prefix) const override;
   void Delete(const std::string &path) override;
@@ -33,6 +35,7 @@ class MemStorage : public IStorage {
   void Put(const std::string &path, std::string bytes);
 
  private:
+  mutable std::mutex mutex_;
   std::unordered_map<std::string, std::string> files_;
 };
 

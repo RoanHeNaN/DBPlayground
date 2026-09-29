@@ -1,6 +1,7 @@
 #ifndef DBPLAYGROUND_CLOUDTYPES_H
 #define DBPLAYGROUND_CLOUDTYPES_H
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -27,6 +28,12 @@ struct TableDescriptor {
   Schema schema;
 };
 
+struct WalProbePolicy {
+  size_t initial = 8;
+  size_t minimum = 1;
+  size_t maximum = 64;
+};
+
 struct TableSnapshot {
   MetadataVersion current_metadata_version;
   uint64_t current_state_version = 0;
@@ -38,9 +45,15 @@ struct TableSnapshot {
   std::vector<std::string> compacted_data_files;
   std::vector<std::string> wal_files;
   std::vector<CommitRecord> wal_commit_records;
+  uint64_t published_seq = 0;
+  uint64_t indexed_seq = 0;
+  std::vector<Chunk> wal_chunks;
+  size_t probed_wal_count = 0;
+  bool probe_limit_reached = false;
+  bool sequential_wal = false;
 
-  // Query data is the compacted-data set through compacted_cursor followed by
-  // the committed WAL tail through committed_cursor.
+  // Query data is the compacted-data set through indexed_seq followed by
+  // published WAL and, when requested, a bounded speculative WAL tail.
 };
 
 // A group-commit unit. The coordinator above CloudTableWriter may combine
@@ -48,10 +61,12 @@ struct TableSnapshot {
 struct CloudImportBatch {
   std::vector<std::string> batch_ids;
   std::vector<Chunk> chunks;
+  enum class Visibility { Immediate, Deferred } visibility = Visibility::Immediate;
 };
 
 enum class CloudImportCode {
   Committed,
+  Durable,
   AlreadyCommitted,
   TableNotFound,
   NoWriterAvailable,
@@ -65,6 +80,7 @@ struct CloudImportResult {
   CloudImportCode code = CloudImportCode::InvalidRequest;
   uint64_t writer_epoch = 0;
   uint64_t committed_cursor = 0;
+  uint64_t wal_seq = 0;
 };
 
 enum class CloudWriterStartCode { Started, Contended, RetryableConflict, InvalidTable };
@@ -74,11 +90,11 @@ struct CloudWriterStartResult {
   uint64_t writer_epoch = 0;
 };
 
-enum class CloudCompactCode { Compacted, AlreadyPublished, NothingToDo, RetryableConflict, InvalidState };
+enum class CloudIndexCode { Indexed, AlreadyPublished, NothingToDo, RetryableConflict, InvalidState };
 
-struct CloudCompactResult {
-  CloudCompactCode code = CloudCompactCode::InvalidState;
-  uint64_t compacted_cursor = 0;
+struct CloudIndexResult {
+  CloudIndexCode code = CloudIndexCode::InvalidState;
+  uint64_t indexed_seq = 0;
   uint64_t committed_cursor = 0;
 };
 

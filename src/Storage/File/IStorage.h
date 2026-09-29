@@ -17,12 +17,15 @@
 
 #include <cstdint>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
 #include "Common/Slice.h"
 
 namespace dbplay {
+
+enum class CreateFileResult { Created, AlreadyExists, RetryableConflict };
 
 // A single file opened for random-access reads.
 class IInputFile {
@@ -58,6 +61,12 @@ class IStorage {
 
   // Open `path` for sequential writing, truncating any existing content.
   virtual std::unique_ptr<IOutputStream> OpenOutput(const std::string &path) = 0;
+
+  // Atomically publish complete immutable bytes only when `path` is absent.
+  // Implementations must never expose a partially written file at `path`.
+  virtual CreateFileResult CreateIfAbsent(const std::string &path, const Slice &bytes) {
+    throw std::logic_error("IStorage: conditional create is not supported");
+  }
 
   virtual bool Exists(const std::string &path) const = 0;
 

@@ -25,6 +25,7 @@ class LocalStorage : public IStorage {
 
   std::unique_ptr<IInputFile> OpenInput(const std::string &path) override;
   std::unique_ptr<IOutputStream> OpenOutput(const std::string &path) override;
+  CreateFileResult CreateIfAbsent(const std::string &path, const Slice &bytes) override;
   bool Exists(const std::string &path) const override;
   std::vector<std::string> List(const std::string &prefix) const override;
   void Delete(const std::string &path) override;
