@@ -1,0 +1,88 @@
+src/Cloud/TableSnapshotLoader.h
+  s_d357185427f541::t_88a679d1eaa3f4 16
+test/Cloud/CloudPathTest.cpp
+  s_d357185427f541::t_99877b5a431374 228-230
+  s_d357185427f541::t_eeb8d407aa34ec 264
+  s_d357185427f541::t_88a679d1eaa3f4 66
+  s_d357185427f541::t_67d058020f1bd9 161,181,195,211,276-277,327,375
+  s_d357185427f541::t_1724641c160df2 67
+  s_d357185427f541::t_61272b8b78007e 163,307,328,353,390,417,464
+  s_d357185427f541::t_a501fea30fe586 165,330,332,354,391,418,465,473
+src/Cloud/CloudTableWriter.h
+  s_d357185427f541::t_ca06f3b6056eac 22
+src/Cloud/CloudWalIndexer.h
+  s_d357185427f541::t_d52d1e128f850c 23-24
+  s_d357185427f541::t_67d058020f1bd9 36
+docs/design/MultiTenantObjectStore.md
+  s_d357185427f541::t_a08151dcf21389 145
+src/Cloud/CloudTableWriter.cpp
+  s_d357185427f541::t_adab3bae356700 21
+  s_d357185427f541::t_67d058020f1bd9 229
+  s_d357185427f541::t_ca06f3b6056eac 16
+src/Cloud/CloudTable.h
+  s_d357185427f541::t_67d058020f1bd9 41
+  s_d357185427f541::t_ca06f3b6056eac 27
+  s_d357185427f541::t_907d73b8bd214b 33
+src/Cloud/CloudTypes.h
+  s_d357185427f541::t_67d058020f1bd9 75,91
+  s_d357185427f541::t_907d73b8bd214b 40-41,48
+src/Cloud/TableSnapshotLoader.cpp
+  s_d357185427f541::t_9ceabc2aaf0c04 10,24-27
+src/Cloud/CloudWalIndexer.cpp
+  s_d357185427f541::t_88a679d1eaa3f4 13
+  s_d357185427f541::t_adab3bae356700 14
+  s_d357185427f541::t_67d058020f1bd9 18,55,94
+  s_d357185427f541::t_d52d1e128f850c 22-23
+  s_d357185427f541::t_1724641c160df2 52,65
+src/Cloud/IObjectKeyGenerator.h
+  s_d357185427f541::t_1724641c160df2 13-14
+docs/CloudTesting.md
+  s_d357185427f541::t_e2cfb33e64da78 5
+test/Cloud/S3IntegrationTest.cpp
+  s_d357185427f541::t_88a679d1eaa3f4 62
+  s_d357185427f541::t_a501fea30fe586 100,117,170,172,184,257
+  s_d357185427f541::t_61272b8b78007e 101
+  s_d357185427f541::t_67d058020f1bd9 145
+  s_d357185427f541::t_1724641c160df2 63
+  s_d357185427f541::t_99877b5a431374 163-165
+src/Metadata/IMetadataStore.h
+  s_d357185427f541::t_1724641c160df2 32
+src/Cloud/CloudTableSource.h
+  s_d357185427f541::t_eeb8d407aa34ec 14
+  s_d357185427f541::t_8dfb830e56e0d4 18-19,29
+docs/design/CloudTableLayering.md
+  s_d357185427f541::t_e2cfb33e64da78 3-4
+docs/design/CloudImportQueryFramework.md
+  s_d357185427f541::t_e2cfb33e64da78 3-4
+src/Cloud/CloudTableSource.cpp
+  s_d357185427f541::t_8dfb830e56e0d4 59-60,63,65
+  s_d357185427f541::t_e6a26692b54eb4 13-14,17-18,21,27,29,71,73
+  s_d357185427f541::t_9ceabc2aaf0c04 72
+docs/design/LogAsDatabaseReferences.md
+  s_d357185427f541::t_978f5358b73fe6 3-5
+src/Cloud/CloudTable.cpp
+  s_d357185427f541::t_88a679d1eaa3f4 13,58
+  s_d357185427f541::t_907d73b8bd214b 31,51
+  s_d357185427f541::t_67d058020f1bd9 18,48
+  s_d357185427f541::t_ca06f3b6056eac 22-23,52,57
+docs/design/CloudGarbageCollection.md
+  s_d357185427f541::t_e2cfb33e64da78 3-4
+docs/design/HighCardinalityMultiTenantObservability.md
+  s_d357185427f541::t_978f5358b73fe6 3-5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "585d7967d91ab82099e0bac0d89699d1c8766917",
+  "prompts": {},
+  "sessions": {
+    "s_d357185427f541": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0eb1d-7ed3-7e32-9e9d-75baa36a2b97",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "zhiqiang-hhhh <seuhezhiqiang@163.com>"
+    }
+  }
+}
