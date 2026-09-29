@@ -1,0 +1,52 @@
+contrib/fmt-cmake/CMakeLists.txt
+  s_d357185427f541::t_90dff60cddb980 1-6
+src/Metadata/MetadataVersion.cpp
+  s_d357185427f541::t_c4ded0526d251d 1-8
+src/Cloud/SequentialProtocol.h
+  s_d357185427f541::t_615cc4da66b833 76-79,102-105
+  s_d357185427f541::t_74c22a13f3ec8a 65-66
+  s_d357185427f541::t_c4ded0526d251d 24-25,38-39,43-44,73
+  s_d357185427f541::t_5ae98212fca4f6 72
+  s_d357185427f541::t_033a7612d6455e 74-75
+src/Cloud/SequentialProtocol.cpp
+  s_d357185427f541::t_4e0b5981bffa92 17-18
+  s_d357185427f541::t_615cc4da66b833 454,458,515-517,521-532
+  s_d357185427f541::t_fbe4b41af1fa0d 518-520
+  s_d357185427f541::t_d9c78b8ae3f9eb 143-179
+  s_d357185427f541::t_da09408da856ac 452-453,456-457
+src/Cloud/CloudTableWriter.cpp
+  s_d357185427f541::t_fbe4b41af1fa0d 27,117,151-152,154-156
+  s_d357185427f541::t_615cc4da66b833 207
+  s_d357185427f541::t_92d1ebee2bf6e5 25-26,115-116,150
+CMakeLists.txt
+  s_d357185427f541::t_90dff60cddb980 33
+src/Metadata/IMetadataStore.h
+  s_d357185427f541::t_c4ded0526d251d 18
+test/Cloud/CloudPathTest.cpp
+  s_d357185427f541::t_fd42dfc4d0deb4 490-523
+  s_d357185427f541::t_cc229d00e5bea6 455-489
+src/Cloud/CloudWalIndexer.cpp
+  s_d357185427f541::t_615cc4da66b833 75
+src/CMakeLists.txt
+  s_d357185427f541::t_90dff60cddb980 33
+.gitmodules
+  s_d357185427f541::t_fab7cf9bc93161 13-15
+contrib/fmt
+  s_d357185427f541::t_ed1c7ca4414ddf 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "6b51e9339195c14ab4530a1c3aef65f9cf240bde",
+  "prompts": {},
+  "sessions": {
+    "s_d357185427f541": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0eb1d-7ed3-7e32-9e9d-75baa36a2b97",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "zhiqiang-hhhh <seuhezhiqiang@163.com>"
+    }
+  }
+}
