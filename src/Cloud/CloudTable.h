@@ -10,8 +10,6 @@
 #include "Cloud/CloudTableWriter.h"
 #include "Cloud/CloudTypes.h"
 #include "Cloud/CloudWalIndexer.h"
-#include "Cloud/IBatchCommitResolver.h"
-#include "Cloud/ICompactedDataManifestStore.h"
 #include "Cloud/IObjectKeyGenerator.h"
 #include "Cloud/TableSnapshotLoader.h"
 #include "Metadata/IMetadataStore.h"
@@ -26,17 +24,13 @@ namespace dbplay {
 class CloudTable {
  public:
   CloudTable(TableDescriptor descriptor, std::shared_ptr<IStorage> files, std::shared_ptr<IMetadataStore> metadata,
-             std::shared_ptr<ICompactedDataManifestStore> compacted_data_manifest_store,
-             std::shared_ptr<IFileFormat> compacted_data_format, std::shared_ptr<IFileFormat> wal_format,
-             WalProbePolicy probe_policy = {});
+             std::shared_ptr<IFileFormat> data_format, WalProbePolicy probe_policy = {});
 
   const TableDescriptor &descriptor() const { return descriptor_; }
 
   std::optional<TableSnapshot> LoadSnapshot(bool probe_unpublished = true) const;
   std::unique_ptr<ITableSource> OpenSnapshot(bool probe_unpublished = true) const;
-  std::unique_ptr<CloudTableWriter> NewWriter(std::shared_ptr<IObjectKeyGenerator> keys,
-                                              std::shared_ptr<IBatchCommitResolver> batches,
-                                              size_t max_publish_attempts = 4) const;
+  std::unique_ptr<CloudTableWriter> NewWriter(size_t max_publish_attempts = 4) const;
   std::unique_ptr<CloudWalIndexer> NewIndexer(std::shared_ptr<IObjectKeyGenerator> keys,
                                               size_t max_publish_attempts = 4) const;
 
@@ -44,9 +38,7 @@ class CloudTable {
   TableDescriptor descriptor_;
   std::shared_ptr<IStorage> files_;
   std::shared_ptr<IMetadataStore> metadata_;
-  std::shared_ptr<ICompactedDataManifestStore> compacted_data_manifest_store_;
-  std::shared_ptr<IFileFormat> compacted_data_format_;
-  std::shared_ptr<IFileFormat> wal_format_;
+  std::shared_ptr<IFileFormat> data_format_;
   WalProbePolicy probe_policy_;
   mutable std::atomic<size_t> probe_limit_;
 };

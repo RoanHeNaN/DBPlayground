@@ -1,5 +1,8 @@
 # Log-as-Database：思想源流与本项目对应
 
+> 本文是历史调研；旧 commit 链示例不代表当前实现。当前 WAL 协议见
+> [`MultiTenantObjectStore.md`](MultiTenantObjectStore.md)。
+
 > Status: **reference note**（外部文献 + 与本项目设计的映射），非实现规格。
 > 目的：为 Cloud 模式"不可变 WAL/commit + CAS 切 CURRENT + 后台 compaction 物化 base"这套设计
 > 提供思想出处。关联：[`CloudImportQueryFramework.md`](CloudImportQueryFramework.md)、

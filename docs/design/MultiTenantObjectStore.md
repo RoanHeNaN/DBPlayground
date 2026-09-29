@@ -142,7 +142,7 @@ footer:
 
 `Fence` 使用同一文件头，记录新 epoch 和唯一的 `operation_id`，但 `batch_ids`、`chunks` 均为空，`total_row_count = 0`。例如序号 16 的标记在解码后是 `{ "entry_kind": "Fence", "seq": 16, "writer_epoch": 5, "operation_id": "fence-epoch-5", "batch_ids": [], "chunks": [] }`。它占一个序号，不参与查询结果或批次去重，也不生成 DBC1 行。`Append` 必须有非空批次 ID 与有效数据，且 schema 与头部版本相符。读者核对文件名和头部 `seq`、表 ID、行数、CRC、digest 及结尾标记；任何不符都不能当作有效 WAL。
 
-首个落地版本只支持 Append 和 Fence。Delete、Update 与墓碑需要另行定义编码、重放顺序和读时合并规则。目标格式 `DBW2` 需要从现有 `WalFileFormat` 的 `DBW1` 增加元数据字段；WAL 存可重放的数据与幂等信息，不存已生成的 DBC1 文件。
+首个落地版本只支持 Append 和 Fence。Delete、Update 与墓碑需要另行定义编码、重放顺序和读时合并规则。`DBW2` WAL 存可重放的数据与幂等信息，不存已生成的 DBC1 文件。
 
 ## 5. writer 启动、序号与 fencing
 

@@ -1,9 +1,7 @@
 # Cloud Mode Import and Query Framework
 
-> Status: **framework implemented; production adapters pending**。
->
-> 本文把 Cloud 模式的导入与查询路径落实到具体类和接口。当前已经实现内存端到端编排与协议测试；
-> S3、Catalog、membership、RPC、group commit scheduler、manifest codec 和独立 WAL codec 仍是接口。
+> 历史设计草案：本文描述的 commit 链和旧 CURRENT 协议已废弃，不对应现行代码。
+> 当前协议见 [`MultiTenantObjectStore.md`](MultiTenantObjectStore.md)。
 
 ## 1. 目标与边界
 

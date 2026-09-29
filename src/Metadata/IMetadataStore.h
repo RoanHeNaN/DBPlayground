@@ -29,7 +29,7 @@ struct VersionedValue {
 
 enum class ConditionalWriteResult { Applied, PreconditionFailed, RetryableConflict };
 
-// Versioned key/value coordination seam used by TableCurrentStateStore. This is
+// Versioned key/value coordination seam used by SequentialStateStore. This is
 // intentionally independent of the byte-range IStorage file abstraction.
 class IMetadataStore {
  public:

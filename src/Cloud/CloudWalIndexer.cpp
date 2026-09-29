@@ -10,21 +10,17 @@
 namespace dbplay {
 
 CloudWalIndexer::CloudWalIndexer(TableDescriptor table, std::shared_ptr<IStorage> files,
-                                 std::shared_ptr<IMetadataStore> metadata,
-                                 std::shared_ptr<IFileFormat> compacted_data_format,
-                                 std::shared_ptr<IFileFormat> wal_format, std::shared_ptr<IObjectKeyGenerator> keys,
-                                 size_t max_publish_attempts)
+                                 std::shared_ptr<IMetadataStore> metadata, std::shared_ptr<IFileFormat> data_format,
+                                 std::shared_ptr<IObjectKeyGenerator> keys, size_t max_publish_attempts)
     : table_(std::move(table)),
       files_(std::move(files)),
       metadata_(std::move(metadata)),
-      compacted_data_format_(std::move(compacted_data_format)),
-      wal_format_(std::move(wal_format)),
+      data_format_(std::move(data_format)),
       keys_(std::move(keys)),
       current_state_store_(table_, metadata_),
       max_publish_attempts_(max_publish_attempts) {
-  if (!files_ || !compacted_data_format_ || !wal_format_ || !keys_ || max_publish_attempts_ == 0 ||
-      !SchemasEqual(table_.schema, compacted_data_format_->schema()) ||
-      !SchemasEqual(table_.schema, wal_format_->schema()))
+  if (!files_ || !data_format_ || !keys_ || max_publish_attempts_ == 0 ||
+      !SchemasEqual(table_.schema, data_format_->schema()))
     throw std::invalid_argument("CloudWalIndexer: invalid dependency");
 }
 
@@ -53,10 +49,10 @@ CloudIndexResult CloudWalIndexer::Index() {
     if (end == current->state.indexed_seq) return Result(CloudIndexCode::NothingToDo, current->state);
 
     if (!chunks.empty()) {
-      const std::string key = keys_->NewCompactedDataFileKey(table_.table_id);
+      const std::string key = keys_->NewDataFileKey(table_.table_id);
       if (key.compare(0, 5, "data/") != 0) return Result(CloudIndexCode::InvalidState, current->state);
       const std::string path = table_.file_prefix + "/" + key;
-      auto writer = compacted_data_format_->OpenWriter(*files_, path);
+      auto writer = data_format_->OpenWriter(*files_, path);
       if (!writer) throw std::runtime_error("CloudWalIndexer: null writer");
       for (const auto &chunk : chunks) writer->Write(chunk);
       writer->Close();
@@ -66,7 +62,7 @@ CloudIndexResult CloudWalIndexer::Index() {
     entries.erase(std::unique(entries.begin(), entries.end(),
                               [](const auto &a, const auto &b) { return a.batch_id == b.batch_id; }),
                   entries.end());
-    const std::string manifest_key = keys_->NewCompactedDataManifestKey(table_.table_id);
+    const std::string manifest_key = keys_->NewManifestKey(table_.table_id);
     if (manifest_key.compare(0, 9, "manifest/") != 0) return Result(CloudIndexCode::InvalidState, current->state);
     const std::string dedup_key = "dedup/" + manifest_key.substr(9) + ".idx";
     const auto dedup_result = current_state_store_.WriteBatchIndex(dedup_key, entries);
@@ -95,7 +91,7 @@ CloudIndexResult CloudWalIndexer::Result(CloudIndexCode code, const SequentialSt
   CloudIndexResult result;
   result.code = code;
   result.indexed_seq = state.indexed_seq;
-  result.committed_cursor = state.published_seq;
+  result.published_seq = state.published_seq;
   return result;
 }
 

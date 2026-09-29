@@ -8,20 +8,15 @@
 
 #include "Cloud/CloudServices.h"
 #include "Cloud/CloudTable.h"
-#include "Cloud/IBatchCommitResolver.h"
 #include "Cloud/ICloudCatalog.h"
-#include "Cloud/ICompactedDataManifestStore.h"
 #include "Cloud/IObjectKeyGenerator.h"
 #include "Cloud/IWriterRouting.h"
-#include "Cloud/MetadataCompactedDataManifestStore.h"
 #include "Cloud/SequentialProtocol.h"
 #include "Execution/ScanExecutor.h"
 #include "Metadata/MemMetadataStore.h"
-#include "Metadata/TableMetadataCodec.h"
 #include "Storage/File/IStorage.h"
 #include "Storage/File/MemStorage.h"
 #include "Table/Format/NativeColumnarFileFormat.h"
-#include "Table/Format/WalFileFormat.h"
 #include "gtest/gtest.h"
 
 namespace dbplay {
@@ -66,53 +61,16 @@ class NoListStorage : public IStorage {
   MemStorage storage_;
 };
 
-class EmptyCompactedDataManifestStore : public ICompactedDataManifestStore {
- public:
-  std::optional<CompactedDataManifest> Load(const TableDescriptor &, const std::string &) const override {
-    return std::nullopt;
-  }
-};
-
-class FixedCompactedDataManifestStore : public ICompactedDataManifestStore {
- public:
-  FixedCompactedDataManifestStore(std::string key, CompactedDataManifest manifest)
-      : key_(std::move(key)), manifest_(std::move(manifest)) {}
-
-  std::optional<CompactedDataManifest> Load(const TableDescriptor &, const std::string &key) const override {
-    return key == key_ ? std::optional<CompactedDataManifest>(manifest_) : std::nullopt;
-  }
-
- private:
-  std::string key_;
-  CompactedDataManifest manifest_;
-};
-
 class SequenceKeys : public IObjectKeyGenerator {
  public:
-  std::string NewWalKey(const std::string &) override { return "wal/" + std::to_string(next_wal_++) + ".wal"; }
-  std::string NewCommitKey(const std::string &) override {
-    return "commit/" + std::to_string(next_commit_++) + ".meta";
-  }
-  std::string NewCompactedDataFileKey(const std::string &) override {
-    return "data/" + std::to_string(next_data_++) + ".dbc1";
-  }
-  std::string NewCompactedDataManifestKey(const std::string &) override {
+  std::string NewDataFileKey(const std::string &) override { return "data/" + std::to_string(next_data_++) + ".dbc1"; }
+  std::string NewManifestKey(const std::string &) override {
     return "manifest/" + std::to_string(next_manifest_++) + ".meta";
   }
 
  private:
-  std::atomic<uint64_t> next_wal_{1};
-  std::atomic<uint64_t> next_commit_{1};
   std::atomic<uint64_t> next_data_{1};
   std::atomic<uint64_t> next_manifest_{1};
-};
-
-class NeverCommittedBatches : public IBatchCommitResolver {
- public:
-  BatchCommitStatus Lookup(const TableDescriptor &, const VersionedCurrentTableState &,
-                           const std::vector<std::string> &) const override {
-    return BatchCommitStatus::NotCommitted;
-  }
 };
 
 class StaticCatalog : public ICloudCatalog {
@@ -200,16 +158,11 @@ TEST(CloudPathTest, ImportIsImmediatelyVisibleWithoutListAndSnapshotsAreImmutabl
 
   auto files = std::make_shared<NoListStorage>();
   auto metadata = std::make_shared<MemMetadataStore>();
-  auto compacted_data_manifest_store =
-      std::make_shared<MetadataCompactedDataManifestStore>(descriptor.table_id, descriptor.metadata_prefix, metadata);
-  auto compacted_data_format = std::make_shared<NativeColumnarFileFormat>(descriptor.schema);
-  auto wal_format = std::make_shared<WalFileFormat>(descriptor.schema);
+  auto data_format = std::make_shared<NativeColumnarFileFormat>(descriptor.schema);
   auto keys = std::make_shared<SequenceKeys>();
-  auto batches = std::make_shared<NeverCommittedBatches>();
-  auto table = std::make_shared<CloudTable>(descriptor, files, metadata, compacted_data_manifest_store,
-                                            compacted_data_format, wal_format);
+  auto table = std::make_shared<CloudTable>(descriptor, files, metadata, data_format);
 
-  auto coordinator = std::make_shared<WriterCoordinator>(table->NewWriter(keys, batches));
+  auto coordinator = std::make_shared<WriterCoordinator>(table->NewWriter());
   ASSERT_EQ(coordinator->Start().code, CloudWriterStartCode::Started);
   auto coordinator_provider = std::make_shared<SingleCoordinatorProvider>(descriptor.table_id, coordinator);
   auto writer_service = std::make_shared<CloudWriterService>(coordinator_provider);
@@ -225,7 +178,7 @@ TEST(CloudPathTest, ImportIsImmediatelyVisibleWithoutListAndSnapshotsAreImmutabl
   first.chunks = {MakeChunk(0, 3)};
   const auto first_result = importer.Import({"observability", "events"}, first);
   ASSERT_EQ(first_result.code, CloudImportCode::Committed);
-  EXPECT_EQ(first_result.committed_cursor, 2u);  // seq 1 is the writer's fence
+  EXPECT_EQ(first_result.published_seq, 2u);  // seq 1 is the writer's fence
 
   auto first_snapshot = queries.Open({"observability", "events"});
   ASSERT_NE(first_snapshot, nullptr);
@@ -239,7 +192,7 @@ TEST(CloudPathTest, ImportIsImmediatelyVisibleWithoutListAndSnapshotsAreImmutabl
   second.chunks = {MakeChunk(100, 2), MakeChunk(200, 1)};
   const auto second_result = importer.Import({"observability", "events"}, second);
   ASSERT_EQ(second_result.code, CloudImportCode::Committed);
-  EXPECT_EQ(second_result.committed_cursor, 3u);
+  EXPECT_EQ(second_result.published_seq, 3u);
 
   // A source already opened remains pinned to the old commit head.
   EXPECT_EQ(CollectProjected(*first_snapshot, {0}).size(), 3u);
@@ -255,7 +208,7 @@ TEST(CloudPathTest, ImportIsImmediatelyVisibleWithoutListAndSnapshotsAreImmutabl
   const auto indexed = table->NewIndexer(keys)->Index();
   ASSERT_EQ(indexed.code, CloudIndexCode::Indexed);
   EXPECT_EQ(indexed.indexed_seq, 3u);
-  EXPECT_EQ(indexed.committed_cursor, 3u);
+  EXPECT_EQ(indexed.published_seq, 3u);
 
   CloudImportBatch third;
   third.batch_ids = {"client-4"};
@@ -272,9 +225,9 @@ TEST(CloudPathTest, ImportIsImmediatelyVisibleWithoutListAndSnapshotsAreImmutabl
 
   const auto snapshot = table->LoadSnapshot();
   ASSERT_TRUE(snapshot.has_value());
-  EXPECT_EQ(snapshot->compacted_cursor, 3u);
-  EXPECT_EQ(snapshot->committed_cursor, 4u);
-  EXPECT_EQ(snapshot->compacted_data_files.size(), 1u);
+  EXPECT_EQ(snapshot->indexed_seq, 3u);
+  EXPECT_EQ(snapshot->published_seq, 4u);
+  EXPECT_EQ(snapshot->data_files.size(), 1u);
   EXPECT_EQ(snapshot->wal_files.size(), 1u);
 }
 
@@ -308,7 +261,7 @@ TEST(CloudPathTest, MissingCatalogEntriesFailBeforeRoutingOrOpeningStorage) {
   EXPECT_EQ(queries.Open({"missing", "table"}), nullptr);
 }
 
-TEST(CloudPathTest, QueryCombinesCompactedDataWithCommittedWalTail) {
+TEST(CloudPathTest, QueryCombinesIndexedDataWithPublishedWalTail) {
   TableDescriptor descriptor;
   descriptor.table_id = "tenant-a/events";
   descriptor.metadata_prefix = "tables/tenant-a/events/metadata";
@@ -320,9 +273,8 @@ TEST(CloudPathTest, QueryCombinesCompactedDataWithCommittedWalTail) {
 
   auto files = std::make_shared<NoListStorage>();
   auto metadata = std::make_shared<MemMetadataStore>();
-  auto compacted_data_format = std::make_shared<NativeColumnarFileFormat>(descriptor.schema);
-  auto wal_format = std::make_shared<WalFileFormat>(descriptor.schema);
-  WriteFile(*compacted_data_format, *files, compacted_data_file, MakeChunk(0, 2));
+  auto data_format = std::make_shared<NativeColumnarFileFormat>(descriptor.schema);
+  WriteFile(*data_format, *files, compacted_data_file, MakeChunk(0, 2));
   SequentialManifest manifest;
   manifest.table_id = descriptor.table_id;
   manifest.schema = descriptor.schema;
@@ -352,8 +304,7 @@ TEST(CloudPathTest, QueryCombinesCompactedDataWithCommittedWalTail) {
   ASSERT_EQ(metadata->PutIfAbsent(descriptor.metadata_prefix + "/CURRENT", Slice(encoded_state), nullptr),
             ConditionalWriteResult::Applied);
 
-  auto compacted_data_manifest_store = std::make_shared<EmptyCompactedDataManifestStore>();
-  CloudTable table(descriptor, files, metadata, compacted_data_manifest_store, compacted_data_format, wal_format);
+  CloudTable table(descriptor, files, metadata, data_format);
   auto source = table.OpenSnapshot();
   ASSERT_NE(source, nullptr);
   auto rows = CollectProjected(*source, {0});
@@ -373,15 +324,12 @@ TEST(CloudPathTest, OldCloudWriterStopsAfterAnotherWriterAcquiresTheTable) {
 
   auto files = std::make_shared<NoListStorage>();
   auto metadata = std::make_shared<MemMetadataStore>();
-  auto compacted_data_manifest_store = std::make_shared<EmptyCompactedDataManifestStore>();
-  auto compacted_data_format = std::make_shared<NativeColumnarFileFormat>(descriptor.schema);
-  auto wal_format = std::make_shared<WalFileFormat>(descriptor.schema);
-  auto batches = std::make_shared<NeverCommittedBatches>();
-  CloudTable table(descriptor, files, metadata, compacted_data_manifest_store, compacted_data_format, wal_format);
+  auto data_format = std::make_shared<NativeColumnarFileFormat>(descriptor.schema);
+  CloudTable table(descriptor, files, metadata, data_format);
 
-  auto old_writer = table.NewWriter(std::make_shared<SequenceKeys>(), batches);
+  auto old_writer = table.NewWriter();
   ASSERT_EQ(old_writer->Start().code, CloudWriterStartCode::Started);
-  auto new_writer = table.NewWriter(std::make_shared<SequenceKeys>(), batches);
+  auto new_writer = table.NewWriter();
   ASSERT_EQ(new_writer->Start().code, CloudWriterStartCode::Started);
   EXPECT_GT(new_writer->writer_epoch(), old_writer->writer_epoch());
 
@@ -400,13 +348,10 @@ TEST(CloudPathTest, DeferredWalIsOptionalForQueriesUntilIndexingPublishesIt) {
   descriptor.schema = TestSchema();
   auto files = std::make_shared<NoListStorage>();
   auto metadata = std::make_shared<MemMetadataStore>();
-  auto manifest_store = std::make_shared<EmptyCompactedDataManifestStore>();
   auto data_format = std::make_shared<NativeColumnarFileFormat>(descriptor.schema);
-  auto wal_format = std::make_shared<WalFileFormat>(descriptor.schema);
   auto keys = std::make_shared<SequenceKeys>();
-  auto batches = std::make_shared<NeverCommittedBatches>();
-  CloudTable table(descriptor, files, metadata, manifest_store, data_format, wal_format);
-  auto writer = table.NewWriter(keys, batches);
+  CloudTable table(descriptor, files, metadata, data_format);
+  auto writer = table.NewWriter();
   ASSERT_EQ(writer->Start().code, CloudWriterStartCode::Started);
 
   CloudImportBatch batch;
@@ -427,7 +372,7 @@ TEST(CloudPathTest, DeferredWalIsOptionalForQueriesUntilIndexingPublishesIt) {
   const auto indexed = table.NewIndexer(keys)->Index();
   ASSERT_EQ(indexed.code, CloudIndexCode::Indexed);
   EXPECT_EQ(indexed.indexed_seq, 2u);
-  EXPECT_EQ(indexed.committed_cursor, 2u);
+  EXPECT_EQ(indexed.published_seq, 2u);
   strict = table.OpenSnapshot(false);
   ASSERT_NE(strict, nullptr);
   EXPECT_EQ(CollectProjected(*strict, {0}).size(), 2u);
@@ -442,10 +387,8 @@ TEST(CloudPathTest, ImmediateImportPublishesEarlierDeferredWal) {
   descriptor.schema = TestSchema();
   auto files = std::make_shared<NoListStorage>();
   auto metadata = std::make_shared<MemMetadataStore>();
-  CloudTable table(descriptor, files, metadata, std::make_shared<EmptyCompactedDataManifestStore>(),
-                   std::make_shared<NativeColumnarFileFormat>(descriptor.schema),
-                   std::make_shared<WalFileFormat>(descriptor.schema));
-  auto writer = table.NewWriter(std::make_shared<SequenceKeys>(), std::make_shared<NeverCommittedBatches>());
+  CloudTable table(descriptor, files, metadata, std::make_shared<NativeColumnarFileFormat>(descriptor.schema));
+  auto writer = table.NewWriter();
   ASSERT_EQ(writer->Start().code, CloudWriterStartCode::Started);
   CloudImportBatch first;
   first.batch_ids = {"first"};
@@ -471,10 +414,8 @@ TEST(CloudPathTest, ProbeWindowGrowsWhenQueriesReachItsLimit) {
   descriptor.schema = TestSchema();
   auto files = std::make_shared<NoListStorage>();
   auto metadata = std::make_shared<MemMetadataStore>();
-  CloudTable table(descriptor, files, metadata, std::make_shared<EmptyCompactedDataManifestStore>(),
-                   std::make_shared<NativeColumnarFileFormat>(descriptor.schema),
-                   std::make_shared<WalFileFormat>(descriptor.schema));
-  auto writer = table.NewWriter(std::make_shared<SequenceKeys>(), std::make_shared<NeverCommittedBatches>());
+  CloudTable table(descriptor, files, metadata, std::make_shared<NativeColumnarFileFormat>(descriptor.schema));
+  auto writer = table.NewWriter();
   ASSERT_EQ(writer->Start().code, CloudWriterStartCode::Started);
   for (int i = 0; i < 10; ++i) {
     CloudImportBatch batch;
@@ -520,11 +461,8 @@ TEST(CloudPathTest, DeferredWalSurvivesWriterReplacement) {
   auto files = std::make_shared<NoListStorage>();
   auto metadata = std::make_shared<MemMetadataStore>();
   auto keys = std::make_shared<SequenceKeys>();
-  auto batches = std::make_shared<NeverCommittedBatches>();
-  CloudTable table(descriptor, files, metadata, std::make_shared<EmptyCompactedDataManifestStore>(),
-                   std::make_shared<NativeColumnarFileFormat>(descriptor.schema),
-                   std::make_shared<WalFileFormat>(descriptor.schema));
-  auto old_writer = table.NewWriter(keys, batches);
+  CloudTable table(descriptor, files, metadata, std::make_shared<NativeColumnarFileFormat>(descriptor.schema));
+  auto old_writer = table.NewWriter();
   ASSERT_EQ(old_writer->Start().code, CloudWriterStartCode::Started);
   CloudImportBatch batch;
   batch.batch_ids = {"before-failover"};
@@ -532,7 +470,7 @@ TEST(CloudPathTest, DeferredWalSurvivesWriterReplacement) {
   batch.visibility = CloudImportBatch::Visibility::Deferred;
   ASSERT_EQ(old_writer->Import(batch).code, CloudImportCode::Durable);
 
-  auto replacement = table.NewWriter(keys, batches);
+  auto replacement = table.NewWriter();
   ASSERT_EQ(replacement->Start().code, CloudWriterStartCode::Started);
   EXPECT_EQ(old_writer->Import(batch).code, CloudImportCode::Fenced);
   EXPECT_TRUE(CollectProjected(*table.OpenSnapshot(false), {0}).empty());
