@@ -14,7 +14,9 @@ S3MetadataStore::S3MetadataStore(std::shared_ptr<s3::S3Client> client, std::stri
 
 std::optional<VersionedValue> S3MetadataStore::Get(const std::string &key) const {
   const s3::S3Response r = client_->Get(ObjectKey(key));
-  if (r.transport_error) throw std::runtime_error("S3MetadataStore: transport error on GET " + key);
+  if (r.transport_error) {
+    throw std::runtime_error("S3MetadataStore: transport error on GET " + key);
+  }
   if (r.status == 404) return std::nullopt;
   if (r.status != 200) {
     throw std::runtime_error("S3MetadataStore: GET " + key + " status " + std::to_string(r.status));

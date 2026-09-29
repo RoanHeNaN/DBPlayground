@@ -21,6 +21,8 @@ struct SequentialState {
   uint64_t indexed_seq = 0;
   uint64_t published_seq = 0;
   std::string manifest_key;
+
+  std::string toString() const;
 };
 
 struct SequentialManifest {
@@ -33,9 +35,13 @@ struct SequentialManifest {
     uint64_t first_seq = 0;
     uint64_t last_seq = 0;
     uint64_t row_count = 0;
+
+    std::string toString() const;
   };
   std::vector<DataFile> data_files;
   std::vector<std::string> batch_index_files;
+
+  std::string toString() const;
 };
 
 struct SequentialBatchEntry {
@@ -56,11 +62,21 @@ struct SequentialWal {
   std::vector<std::string> batch_ids;
   std::vector<Chunk> chunks;
   std::string payload_digest;
+
+  std::string toString() const;
 };
 
 struct VersionedSequentialState {
   SequentialState state;
   MetadataVersion version;
+
+  std::string toString() const;
+};
+
+struct SequentialPublishUpdate {
+  uint64_t through_seq = 0;
+  // Present only when data and a manifest have already been materialized.
+  std::optional<std::string> indexed_manifest_key;
 };
 
 std::string SequentialWalKey(const TableDescriptor &table, uint64_t seq);
@@ -83,6 +99,10 @@ class SequentialStateStore {
   ConditionalWriteResult Initialize();
   ConditionalWriteResult CompareExchange(const VersionedSequentialState &expected, const SequentialState &next,
                                          VersionedSequentialState *written = nullptr);
+  // One CAS attempt. Callers own retry policy: a writer may rebase its
+  // published watermark, while an indexer must rebuild from the new manifest.
+  ConditionalWriteResult Publish(const VersionedSequentialState &expected, const SequentialPublishUpdate &update,
+                                 VersionedSequentialState *written = nullptr);
   ConditionalWriteResult WriteManifest(const std::string &key, const SequentialManifest &manifest);
   ConditionalWriteResult WriteBatchIndex(const std::string &key, const std::vector<SequentialBatchEntry> &entries);
 

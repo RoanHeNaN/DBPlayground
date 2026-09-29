@@ -30,6 +30,7 @@ message(STATUS "ARCH_AARCH64: ${ARCH_AARCH64}")
 message(STATUS "OS_DARWIN: ${OS_DARWIN}")
 
 add_subdirectory(contrib/glog-cmake)
+add_subdirectory(contrib/fmt-cmake)
 add_subdirectory(contrib/zlib-ng-cmake)
 add_subdirectory(contrib/boost-cmake)
 add_subdirectory(contrib/googletest-cmake)

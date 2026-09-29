@@ -30,4 +30,4 @@ find_package(OpenSSL REQUIRED)
 # which -- when added as -I to every source -- breaks Homebrew LLVM libc++'s
 # header ordering (<cwchar> can't find <wchar.h>). <curl/curl.h> resolves via
 # the default SDK sysroot without an explicit include dir.
-target_link_libraries(dbplayground_lib glog::glog _zlib ${CURL_LIBRARIES} OpenSSL::Crypto)
+target_link_libraries(dbplayground_lib glog::glog fmt::fmt _zlib ${CURL_LIBRARIES} OpenSSL::Crypto)

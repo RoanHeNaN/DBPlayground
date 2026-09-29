@@ -15,6 +15,7 @@ class MetadataVersion {
   explicit MetadataVersion(std::string opaque) : opaque_(std::move(opaque)) {}
 
   const std::string &opaque() const { return opaque_; }
+  std::string toString() const;
   bool operator==(const MetadataVersion &other) const { return opaque_ == other.opaque_; }
   bool operator!=(const MetadataVersion &other) const { return !(*this == other); }
 

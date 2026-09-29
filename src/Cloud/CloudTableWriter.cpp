@@ -22,7 +22,9 @@ CloudTableWriter::CloudTableWriter(TableDescriptor table, std::shared_ptr<IStora
 }
 
 CloudWriterStartResult CloudTableWriter::Start() {
-  if (current_state_) return {CloudWriterStartCode::Started, current_state_->state.writer_epoch};
+  if (current_state_) {
+    return {CloudWriterStartCode::Started, current_state_->state.writer_epoch};
+  }
   auto state = current_state_store_.Load();
   if (!state) {
     const auto init = current_state_store_.Initialize();
@@ -110,7 +112,9 @@ CloudImportResult CloudTableWriter::Import(const CloudImportBatch &batch) {
   const std::string request_digest = DecodeSequentialWal(Slice(request_bytes), table_.schema).payload_digest;
   std::unordered_map<std::string, SequentialBatchEntry> known;
   const auto manifest = current_state_store_.LoadManifest(latest->state);
-  for (const auto &entry : current_state_store_.LoadBatchIndex(manifest)) known.emplace(entry.batch_id, entry);
+  for (const auto &entry : current_state_store_.LoadBatchIndex(manifest)) {
+    known.emplace(entry.batch_id, entry);
+  }
   uint64_t scan_seq = latest->state.indexed_seq + 1;
   while (scan_seq < next_seq_) {
     auto wal = LoadSequentialWal(*files_, table_, scan_seq);
@@ -143,9 +147,13 @@ CloudImportResult CloudTableWriter::Import(const CloudImportBatch &batch) {
     result.wal_seq = prior_seq;
     return result;
   }
-  if (already != 0) return Result(CloudImportCode::InvalidRequest);
+  if (already != 0) {
+    return Result(CloudImportCode::InvalidRequest);
+  }
 
-  if (next_seq_ == UINT64_MAX) return Result(CloudImportCode::InvalidRequest);
+  if (next_seq_ == UINT64_MAX) {
+    return Result(CloudImportCode::InvalidRequest);
+  }
   SequentialWal wal;
   wal.table_id = table_.table_id;
   wal.seq = next_seq_;
@@ -195,11 +203,8 @@ CloudImportResult CloudTableWriter::Publish(uint64_t seq, uint64_t epoch) {
       return result;
     }
     if (latest->state.writer_epoch != epoch) break;
-    auto next = latest->state;
-    next.published_seq = seq;
-    ++next.state_version;
     VersionedSequentialState written;
-    const auto cas = current_state_store_.CompareExchange(*latest, next, &written);
+    const auto cas = current_state_store_.Publish(*latest, SequentialPublishUpdate{seq, std::nullopt}, &written);
     if (cas == ConditionalWriteResult::Applied) {
       current_state_ = std::move(written);
       result = Result(CloudImportCode::Committed);

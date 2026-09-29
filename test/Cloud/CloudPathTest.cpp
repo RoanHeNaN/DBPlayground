@@ -452,6 +452,75 @@ TEST(CloudPathTest, SequentialWalCarriesIdentityAndRejectsCorruption) {
   EXPECT_THROW(DecodeSequentialWal(Slice(bytes), TestSchema()), std::invalid_argument);
 }
 
+TEST(CloudPathTest, SequentialStateFormattingIncludesVisibilityAndMetadataVersion) {
+  SequentialState state;
+  state.table_id = "tenant-a/events";
+  state.state_version = 7;
+  state.writer_epoch = 3;
+  state.indexed_seq = 4;
+  state.published_seq = 6;
+  state.manifest_key = "manifest/7.meta";
+  const VersionedSequentialState versioned{state, MetadataVersion("etag-7")};
+  const auto text = versioned.toString();
+  EXPECT_NE(text.find("table_id=tenant-a/events"), std::string::npos);
+  EXPECT_NE(text.find("indexed_seq=4"), std::string::npos);
+  EXPECT_NE(text.find("published_seq=6"), std::string::npos);
+  EXPECT_NE(text.find("manifest_key=manifest/7.meta"), std::string::npos);
+  EXPECT_NE(text.find("version=MetadataVersion{opaque=etag-7}"), std::string::npos);
+
+  SequentialManifest manifest;
+  manifest.table_id = state.table_id;
+  manifest.covered_through_seq = state.indexed_seq;
+  manifest.schema = TestSchema();
+  manifest.data_files.push_back({"files/data/1.dbc1", 1, 4, 2});
+  manifest.batch_index_files.push_back("dedup/1.idx");
+  EXPECT_NE(manifest.toString().find("DataFile{path=files/data/1.dbc1"), std::string::npos);
+  EXPECT_NE(manifest.toString().find("dedup/1.idx"), std::string::npos);
+
+  SequentialWal wal;
+  wal.table_id = state.table_id;
+  wal.seq = 6;
+  wal.writer_epoch = state.writer_epoch;
+  wal.operation_id = "batch-6";
+  wal.batch_ids = {"batch-6"};
+  wal.chunks = {MakeChunk(10, 2)};
+  EXPECT_NE(wal.toString().find("row_count=2"), std::string::npos);
+}
+
+TEST(CloudPathTest, IndexedPublishPreservesConcurrentWriterWatermark) {
+  TableDescriptor descriptor;
+  descriptor.table_id = "tenant-a/events";
+  descriptor.metadata_prefix = "tables/tenant-a/events/metadata";
+  descriptor.file_prefix = "tables/tenant-a/events/files";
+  descriptor.schema = TestSchema();
+  auto metadata = std::make_shared<MemMetadataStore>();
+  SequentialStateStore store(descriptor, metadata);
+  ASSERT_EQ(store.Initialize(), ConditionalWriteResult::Applied);
+  const auto initial = store.Load();
+  ASSERT_TRUE(initial.has_value());
+
+  VersionedSequentialState writer_published;
+  ASSERT_EQ(store.Publish(*initial, SequentialPublishUpdate{3, std::nullopt}, &writer_published),
+            ConditionalWriteResult::Applied);
+  EXPECT_EQ(writer_published.state.published_seq, 3u);
+
+  SequentialManifest manifest;
+  manifest.table_id = descriptor.table_id;
+  manifest.covered_through_seq = 2;
+  manifest.schema = descriptor.schema;
+  ASSERT_EQ(store.WriteManifest("manifest/indexed-2.meta", manifest), ConditionalWriteResult::Applied);
+  EXPECT_EQ(store.Publish(*initial, SequentialPublishUpdate{2, "manifest/indexed-2.meta"}),
+            ConditionalWriteResult::PreconditionFailed);
+
+  VersionedSequentialState indexed;
+  ASSERT_EQ(store.Publish(writer_published, SequentialPublishUpdate{2, "manifest/indexed-2.meta"}, &indexed),
+            ConditionalWriteResult::Applied);
+  EXPECT_EQ(indexed.state.indexed_seq, 2u);
+  EXPECT_EQ(indexed.state.published_seq, 3u);
+  EXPECT_EQ(indexed.state.manifest_key, "manifest/indexed-2.meta");
+  EXPECT_EQ(store.LoadManifest(indexed.state).covered_through_seq, 2u);
+}
+
 TEST(CloudPathTest, DeferredWalSurvivesWriterReplacement) {
   TableDescriptor descriptor;
   descriptor.table_id = "tenant-a/events";

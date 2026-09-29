@@ -71,13 +71,8 @@ CloudIndexResult CloudWalIndexer::Index() {
     manifest.covered_through_seq = end;
     const auto manifest_result = current_state_store_.WriteManifest(manifest_key, manifest);
     if (manifest_result != ConditionalWriteResult::Applied) continue;
-    auto next = current->state;
-    ++next.state_version;
-    next.indexed_seq = end;
-    next.published_seq = std::max(next.published_seq, end);
-    next.manifest_key = manifest_key;
     VersionedSequentialState written;
-    const auto cas = current_state_store_.CompareExchange(*current, next, &written);
+    const auto cas = current_state_store_.Publish(*current, SequentialPublishUpdate{end, manifest_key}, &written);
     if (cas == ConditionalWriteResult::Applied) {
       LOG(INFO) << "CloudWalIndexer: table=" << table_.table_id << " indexed through WAL " << end;
       return Result(CloudIndexCode::Indexed, written.state);

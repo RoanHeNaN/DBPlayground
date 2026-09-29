@@ -14,6 +14,8 @@
 
 #include "Cloud/CloudValidation.h"
 #include "Table/RowCodec.h"
+#include "fmt/format.h"
+#include "fmt/ranges.h"
 
 namespace dbplay {
 namespace {
@@ -137,6 +139,43 @@ std::string ReadAll(IInputFile &in) {
 }
 
 }  // namespace
+
+std::string SequentialState::toString() const {
+  return fmt::format(
+      "SequentialState{{table_id={}, state_version={}, schema_version={}, writer_epoch={}, indexed_seq={}, "
+      "published_seq={}, manifest_key={}}}",
+      table_id, state_version, schema_version, writer_epoch, indexed_seq, published_seq, manifest_key);
+}
+
+std::string SequentialManifest::DataFile::toString() const {
+  return fmt::format("DataFile{{path={}, first_seq={}, last_seq={}, row_count={}}}", path, first_seq, last_seq,
+                     row_count);
+}
+
+std::string SequentialManifest::toString() const {
+  std::vector<std::string> files;
+  files.reserve(data_files.size());
+  for (const auto &file : data_files) files.push_back(file.toString());
+  return fmt::format(
+      "SequentialManifest{{table_id={}, covered_through_seq={}, schema_version={}, schema_fields={}, "
+      "data_files=[{}], batch_index_files=[{}]}}",
+      table_id, covered_through_seq, schema_version, schema.size(), fmt::join(files, ", "),
+      fmt::join(batch_index_files, ", "));
+}
+
+std::string SequentialWal::toString() const {
+  uint64_t row_count = 0;
+  for (const auto &chunk : chunks) row_count += chunk.row_count;
+  return fmt::format(
+      "SequentialWal{{kind={}, table_id={}, seq={}, writer_epoch={}, schema_version={}, operation_id={}, "
+      "batch_ids=[{}], chunk_count={}, row_count={}}}",
+      kind == Kind::Append ? "Append" : "Fence", table_id, seq, writer_epoch, schema_version, operation_id,
+      fmt::join(batch_ids, ", "), chunks.size(), row_count);
+}
+
+std::string VersionedSequentialState::toString() const {
+  return fmt::format("VersionedSequentialState{{state={}, version={}}}", state.toString(), version.toString());
+}
 
 std::string SequentialWalKey(const TableDescriptor &table, uint64_t seq) {
   if (seq == 0) throw std::invalid_argument("sequential: WAL seq is zero");
@@ -410,9 +449,13 @@ SequentialStateStore::SequentialStateStore(const TableDescriptor &table, std::sh
 
 std::optional<VersionedSequentialState> SequentialStateStore::Load() const {
   auto v = metadata_->Get(current_key_);
-  if (!v) return std::nullopt;
+  if (!v) {
+    return std::nullopt;
+  }
   auto state = DecodeSequentialState(Slice(v->value));
-  if (state.table_id != table_.table_id) throw std::runtime_error("sequential: CURRENT table mismatch");
+  if (state.table_id != table_.table_id) {
+    throw std::runtime_error("sequential: CURRENT table mismatch");
+  }
   return VersionedSequentialState{std::move(state), std::move(v->version)};
 }
 
@@ -467,6 +510,24 @@ ConditionalWriteResult SequentialStateStore::CompareExchange(const VersionedSequ
   const auto result = metadata_->CompareExchange(current_key_, expected.version, Slice(bytes), &version);
   if (result == ConditionalWriteResult::Applied && written) *written = {next, version};
   return result;
+}
+
+ConditionalWriteResult SequentialStateStore::Publish(const VersionedSequentialState &expected,
+                                                     const SequentialPublishUpdate &update,
+                                                     VersionedSequentialState *written) {
+  if (update.through_seq == 0 || (!update.indexed_manifest_key && update.through_seq <= expected.state.published_seq) ||
+      (update.indexed_manifest_key && (update.through_seq <= expected.state.indexed_seq ||
+                                       update.indexed_manifest_key->compare(0, 9, "manifest/") != 0)))
+    throw std::invalid_argument("sequential: invalid publish update");
+
+  SequentialState next = expected.state;
+  ++next.state_version;
+  next.published_seq = std::max(next.published_seq, update.through_seq);
+  if (update.indexed_manifest_key) {
+    next.indexed_seq = update.through_seq;
+    next.manifest_key = *update.indexed_manifest_key;
+  }
+  return CompareExchange(expected, next, written);
 }
 
 ConditionalWriteResult SequentialStateStore::WriteManifest(const std::string &key, const SequentialManifest &manifest) {
