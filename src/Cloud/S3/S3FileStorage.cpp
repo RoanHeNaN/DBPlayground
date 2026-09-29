@@ -108,6 +108,14 @@ std::unique_ptr<IOutputStream> S3FileStorage::OpenOutput(const std::string &path
   return std::make_unique<S3OutputStream>(client_, ObjectKey(path));
 }
 
+CreateFileResult S3FileStorage::CreateIfAbsent(const std::string &path, const Slice &bytes) {
+  const s3::S3Response r = client_->Put(ObjectKey(path), bytes, s3::PutCondition::IfNoneMatchStar);
+  if (r.transport_error || r.status == 409 || r.status >= 500) return CreateFileResult::RetryableConflict;
+  if (r.status == 200) return CreateFileResult::Created;
+  if (r.status == 412) return CreateFileResult::AlreadyExists;
+  throw std::runtime_error("S3FileStorage: conditional PUT " + path + " status " + std::to_string(r.status));
+}
+
 bool S3FileStorage::Exists(const std::string &path) const {
   const s3::S3Response r = client_->Head(ObjectKey(path));
   if (r.transport_error) throw std::runtime_error("S3FileStorage: transport error on HEAD " + path);

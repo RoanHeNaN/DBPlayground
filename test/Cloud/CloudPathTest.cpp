@@ -14,6 +14,7 @@
 #include "Cloud/IObjectKeyGenerator.h"
 #include "Cloud/IWriterRouting.h"
 #include "Cloud/MetadataCompactedDataManifestStore.h"
+#include "Cloud/SequentialProtocol.h"
 #include "Execution/ScanExecutor.h"
 #include "Metadata/MemMetadataStore.h"
 #include "Metadata/TableMetadataCodec.h"
@@ -52,6 +53,9 @@ class NoListStorage : public IStorage {
  public:
   std::unique_ptr<IInputFile> OpenInput(const std::string &path) override { return storage_.OpenInput(path); }
   std::unique_ptr<IOutputStream> OpenOutput(const std::string &path) override { return storage_.OpenOutput(path); }
+  CreateFileResult CreateIfAbsent(const std::string &path, const Slice &bytes) override {
+    return storage_.CreateIfAbsent(path, bytes);
+  }
   bool Exists(const std::string &path) const override { return storage_.Exists(path); }
   std::vector<std::string> List(const std::string &) const override {
     throw std::logic_error("Cloud hot path must not call LIST");
@@ -221,7 +225,7 @@ TEST(CloudPathTest, ImportIsImmediatelyVisibleWithoutListAndSnapshotsAreImmutabl
   first.chunks = {MakeChunk(0, 3)};
   const auto first_result = importer.Import({"observability", "events"}, first);
   ASSERT_EQ(first_result.code, CloudImportCode::Committed);
-  EXPECT_EQ(first_result.committed_cursor, 1u);
+  EXPECT_EQ(first_result.committed_cursor, 2u);  // seq 1 is the writer's fence
 
   auto first_snapshot = queries.Open({"observability", "events"});
   ASSERT_NE(first_snapshot, nullptr);
@@ -235,7 +239,7 @@ TEST(CloudPathTest, ImportIsImmediatelyVisibleWithoutListAndSnapshotsAreImmutabl
   second.chunks = {MakeChunk(100, 2), MakeChunk(200, 1)};
   const auto second_result = importer.Import({"observability", "events"}, second);
   ASSERT_EQ(second_result.code, CloudImportCode::Committed);
-  EXPECT_EQ(second_result.committed_cursor, 2u);
+  EXPECT_EQ(second_result.committed_cursor, 3u);
 
   // A source already opened remains pinned to the old commit head.
   EXPECT_EQ(CollectProjected(*first_snapshot, {0}).size(), 3u);
@@ -248,10 +252,10 @@ TEST(CloudPathTest, ImportIsImmediatelyVisibleWithoutListAndSnapshotsAreImmutabl
   EXPECT_EQ(latest_rows[3][0].AsInt64(), 100);
   EXPECT_EQ(latest_rows[5][0].AsInt64(), 200);
 
-  const auto compacted = table->NewCompactor(keys)->Compact();
-  ASSERT_EQ(compacted.code, CloudCompactCode::Compacted);
-  EXPECT_EQ(compacted.compacted_cursor, 2u);
-  EXPECT_EQ(compacted.committed_cursor, 2u);
+  const auto indexed = table->NewIndexer(keys)->Index();
+  ASSERT_EQ(indexed.code, CloudIndexCode::Indexed);
+  EXPECT_EQ(indexed.indexed_seq, 3u);
+  EXPECT_EQ(indexed.committed_cursor, 3u);
 
   CloudImportBatch third;
   third.batch_ids = {"client-4"};
@@ -268,8 +272,8 @@ TEST(CloudPathTest, ImportIsImmediatelyVisibleWithoutListAndSnapshotsAreImmutabl
 
   const auto snapshot = table->LoadSnapshot();
   ASSERT_TRUE(snapshot.has_value());
-  EXPECT_EQ(snapshot->compacted_cursor, 2u);
-  EXPECT_EQ(snapshot->committed_cursor, 3u);
+  EXPECT_EQ(snapshot->compacted_cursor, 3u);
+  EXPECT_EQ(snapshot->committed_cursor, 4u);
   EXPECT_EQ(snapshot->compacted_data_files.size(), 1u);
   EXPECT_EQ(snapshot->wal_files.size(), 1u);
 }
@@ -312,47 +316,43 @@ TEST(CloudPathTest, QueryCombinesCompactedDataWithCommittedWalTail) {
   descriptor.schema = TestSchema();
 
   const std::string compacted_data_file = descriptor.file_prefix + "/data/compacted-1.dbc1";
-  const std::string wal_file = descriptor.file_prefix + "/wal/2.wal";
   const std::string compacted_data_manifest_key = "manifest/compacted-1.meta";
-  const std::string commit_key = "commit/2.meta";
 
   auto files = std::make_shared<NoListStorage>();
   auto metadata = std::make_shared<MemMetadataStore>();
   auto compacted_data_format = std::make_shared<NativeColumnarFileFormat>(descriptor.schema);
   auto wal_format = std::make_shared<WalFileFormat>(descriptor.schema);
   WriteFile(*compacted_data_format, *files, compacted_data_file, MakeChunk(0, 2));
-  WriteFile(*wal_format, *files, wal_file, MakeChunk(100, 2));
-
-  CompactedDataManifest manifest;
+  SequentialManifest manifest;
   manifest.table_id = descriptor.table_id;
-  manifest.compacted_cursor = 1;
-  manifest.compacted_data_files = {compacted_data_file};
-  auto compacted_data_manifest_store =
-      std::make_shared<FixedCompactedDataManifestStore>(compacted_data_manifest_key, manifest);
+  manifest.schema = descriptor.schema;
+  manifest.covered_through_seq = 1;
+  manifest.data_files = {{compacted_data_file, 1, 1, 2}};
+  SequentialStateStore state_store(descriptor, metadata);
+  ASSERT_EQ(state_store.WriteManifest(compacted_data_manifest_key, manifest), ConditionalWriteResult::Applied);
 
-  CommitRecord commit;
-  commit.table_id = descriptor.table_id;
-  commit.writer_epoch = 3;
-  commit.first_cursor = 2;
-  commit.last_cursor = 2;
-  commit.wal_files = {wal_file};
-  commit.batch_ids = {"batch-2"};
-  const std::string encoded_commit = TableMetadataCodec::EncodeCommitRecord(commit);
-  ASSERT_EQ(metadata->PutIfAbsent(descriptor.metadata_prefix + "/" + commit_key, Slice(encoded_commit), nullptr),
-            ConditionalWriteResult::Applied);
+  SequentialWal wal;
+  wal.table_id = descriptor.table_id;
+  wal.seq = 2;
+  wal.writer_epoch = 3;
+  wal.operation_id = "batch-2";
+  wal.batch_ids = {"batch-2"};
+  wal.chunks = {MakeChunk(100, 2)};
+  const std::string wal_bytes = EncodeSequentialWal(wal, descriptor.schema);
+  ASSERT_EQ(files->CreateIfAbsent(SequentialWalKey(descriptor, 2), Slice(wal_bytes)), CreateFileResult::Created);
 
-  CurrentTableState state;
+  SequentialState state;
   state.table_id = descriptor.table_id;
-  state.current_state_version = 7;
+  state.state_version = 7;
   state.writer_epoch = 3;
-  state.compacted_cursor = 1;
-  state.committed_cursor = 2;
-  state.compacted_data_manifest_key = compacted_data_manifest_key;
-  state.latest_commit_key = commit_key;
-  const std::string encoded_state = TableMetadataCodec::EncodeCurrentTableState(state);
+  state.indexed_seq = 1;
+  state.published_seq = 2;
+  state.manifest_key = compacted_data_manifest_key;
+  const std::string encoded_state = EncodeSequentialState(state);
   ASSERT_EQ(metadata->PutIfAbsent(descriptor.metadata_prefix + "/CURRENT", Slice(encoded_state), nullptr),
             ConditionalWriteResult::Applied);
 
+  auto compacted_data_manifest_store = std::make_shared<EmptyCompactedDataManifestStore>();
   CloudTable table(descriptor, files, metadata, compacted_data_manifest_store, compacted_data_format, wal_format);
   auto source = table.OpenSnapshot();
   ASSERT_NE(source, nullptr);
@@ -390,6 +390,159 @@ TEST(CloudPathTest, OldCloudWriterStopsAfterAnotherWriterAcquiresTheTable) {
   batch.chunks = {MakeChunk(0, 1)};
   EXPECT_EQ(old_writer->Import(batch).code, CloudImportCode::Fenced);
   EXPECT_FALSE(old_writer->started());
+}
+
+TEST(CloudPathTest, DeferredWalIsOptionalForQueriesUntilIndexingPublishesIt) {
+  TableDescriptor descriptor;
+  descriptor.table_id = "tenant-a/events";
+  descriptor.metadata_prefix = "tables/tenant-a/events/metadata";
+  descriptor.file_prefix = "tables/tenant-a/events/files";
+  descriptor.schema = TestSchema();
+  auto files = std::make_shared<NoListStorage>();
+  auto metadata = std::make_shared<MemMetadataStore>();
+  auto manifest_store = std::make_shared<EmptyCompactedDataManifestStore>();
+  auto data_format = std::make_shared<NativeColumnarFileFormat>(descriptor.schema);
+  auto wal_format = std::make_shared<WalFileFormat>(descriptor.schema);
+  auto keys = std::make_shared<SequenceKeys>();
+  auto batches = std::make_shared<NeverCommittedBatches>();
+  CloudTable table(descriptor, files, metadata, manifest_store, data_format, wal_format);
+  auto writer = table.NewWriter(keys, batches);
+  ASSERT_EQ(writer->Start().code, CloudWriterStartCode::Started);
+
+  CloudImportBatch batch;
+  batch.batch_ids = {"deferred-1"};
+  batch.chunks = {MakeChunk(10, 2)};
+  batch.visibility = CloudImportBatch::Visibility::Deferred;
+  const auto imported = writer->Import(batch);
+  ASSERT_EQ(imported.code, CloudImportCode::Durable);
+  EXPECT_EQ(imported.wal_seq, 2u);
+  auto strict = table.OpenSnapshot(false);
+  ASSERT_NE(strict, nullptr);
+  EXPECT_TRUE(CollectProjected(*strict, {0}).empty());
+  auto speculative = table.OpenSnapshot(true);
+  ASSERT_NE(speculative, nullptr);
+  EXPECT_EQ(CollectProjected(*speculative, {0}).size(), 2u);
+  EXPECT_EQ(writer->Import(batch).code, CloudImportCode::Durable);
+
+  const auto indexed = table.NewIndexer(keys)->Index();
+  ASSERT_EQ(indexed.code, CloudIndexCode::Indexed);
+  EXPECT_EQ(indexed.indexed_seq, 2u);
+  EXPECT_EQ(indexed.committed_cursor, 2u);
+  strict = table.OpenSnapshot(false);
+  ASSERT_NE(strict, nullptr);
+  EXPECT_EQ(CollectProjected(*strict, {0}).size(), 2u);
+  EXPECT_EQ(writer->Import(batch).code, CloudImportCode::AlreadyCommitted);
+}
+
+TEST(CloudPathTest, ImmediateImportPublishesEarlierDeferredWal) {
+  TableDescriptor descriptor;
+  descriptor.table_id = "tenant-a/events";
+  descriptor.metadata_prefix = "tables/tenant-a/events/metadata";
+  descriptor.file_prefix = "tables/tenant-a/events/files";
+  descriptor.schema = TestSchema();
+  auto files = std::make_shared<NoListStorage>();
+  auto metadata = std::make_shared<MemMetadataStore>();
+  CloudTable table(descriptor, files, metadata, std::make_shared<EmptyCompactedDataManifestStore>(),
+                   std::make_shared<NativeColumnarFileFormat>(descriptor.schema),
+                   std::make_shared<WalFileFormat>(descriptor.schema));
+  auto writer = table.NewWriter(std::make_shared<SequenceKeys>(), std::make_shared<NeverCommittedBatches>());
+  ASSERT_EQ(writer->Start().code, CloudWriterStartCode::Started);
+  CloudImportBatch first;
+  first.batch_ids = {"first"};
+  first.chunks = {MakeChunk(1, 1)};
+  first.visibility = CloudImportBatch::Visibility::Deferred;
+  EXPECT_EQ(writer->Import(first).code, CloudImportCode::Durable);
+  CloudImportBatch second;
+  second.batch_ids = {"second"};
+  second.chunks = {MakeChunk(2, 1)};
+  const auto imported = writer->Import(second);
+  ASSERT_EQ(imported.code, CloudImportCode::Committed);
+  EXPECT_EQ(imported.wal_seq, 3u);
+  auto strict = table.OpenSnapshot(false);
+  ASSERT_NE(strict, nullptr);
+  EXPECT_EQ(CollectProjected(*strict, {0}).size(), 2u);
+}
+
+TEST(CloudPathTest, ProbeWindowGrowsWhenQueriesReachItsLimit) {
+  TableDescriptor descriptor;
+  descriptor.table_id = "tenant-a/events";
+  descriptor.metadata_prefix = "tables/tenant-a/events/metadata";
+  descriptor.file_prefix = "tables/tenant-a/events/files";
+  descriptor.schema = TestSchema();
+  auto files = std::make_shared<NoListStorage>();
+  auto metadata = std::make_shared<MemMetadataStore>();
+  CloudTable table(descriptor, files, metadata, std::make_shared<EmptyCompactedDataManifestStore>(),
+                   std::make_shared<NativeColumnarFileFormat>(descriptor.schema),
+                   std::make_shared<WalFileFormat>(descriptor.schema));
+  auto writer = table.NewWriter(std::make_shared<SequenceKeys>(), std::make_shared<NeverCommittedBatches>());
+  ASSERT_EQ(writer->Start().code, CloudWriterStartCode::Started);
+  for (int i = 0; i < 10; ++i) {
+    CloudImportBatch batch;
+    batch.batch_ids = {"deferred-" + std::to_string(i)};
+    batch.chunks = {MakeChunk(i, 1)};
+    batch.visibility = CloudImportBatch::Visibility::Deferred;
+    ASSERT_EQ(writer->Import(batch).code, CloudImportCode::Durable);
+  }
+  const auto first = table.LoadSnapshot(true);
+  ASSERT_TRUE(first.has_value());
+  EXPECT_EQ(first->wal_chunks.size(), 7u);  // one of the first eight slots is a fence
+  EXPECT_TRUE(first->probe_limit_reached);
+  const auto second = table.LoadSnapshot(true);
+  ASSERT_TRUE(second.has_value());
+  EXPECT_EQ(second->wal_chunks.size(), 10u);
+  EXPECT_EQ(second->published_seq, 0u);
+}
+
+TEST(CloudPathTest, SequentialWalCarriesIdentityAndRejectsCorruption) {
+  SequentialWal wal;
+  wal.table_id = "tenant-a/events";
+  wal.seq = 42;
+  wal.writer_epoch = 7;
+  wal.operation_id = "request-42";
+  wal.batch_ids = {"batch-42"};
+  wal.chunks = {MakeChunk(100, 2)};
+  std::string bytes = EncodeSequentialWal(wal, TestSchema());
+  const auto decoded = DecodeSequentialWal(Slice(bytes), TestSchema());
+  EXPECT_EQ(decoded.seq, 42u);
+  EXPECT_EQ(decoded.writer_epoch, 7u);
+  EXPECT_EQ(decoded.batch_ids, wal.batch_ids);
+  EXPECT_EQ(decoded.chunks[0].row_count, 2u);
+  bytes[bytes.size() - 9] ^= 1;
+  EXPECT_THROW(DecodeSequentialWal(Slice(bytes), TestSchema()), std::invalid_argument);
+}
+
+TEST(CloudPathTest, DeferredWalSurvivesWriterReplacement) {
+  TableDescriptor descriptor;
+  descriptor.table_id = "tenant-a/events";
+  descriptor.metadata_prefix = "tables/tenant-a/events/metadata";
+  descriptor.file_prefix = "tables/tenant-a/events/files";
+  descriptor.schema = TestSchema();
+  auto files = std::make_shared<NoListStorage>();
+  auto metadata = std::make_shared<MemMetadataStore>();
+  auto keys = std::make_shared<SequenceKeys>();
+  auto batches = std::make_shared<NeverCommittedBatches>();
+  CloudTable table(descriptor, files, metadata, std::make_shared<EmptyCompactedDataManifestStore>(),
+                   std::make_shared<NativeColumnarFileFormat>(descriptor.schema),
+                   std::make_shared<WalFileFormat>(descriptor.schema));
+  auto old_writer = table.NewWriter(keys, batches);
+  ASSERT_EQ(old_writer->Start().code, CloudWriterStartCode::Started);
+  CloudImportBatch batch;
+  batch.batch_ids = {"before-failover"};
+  batch.chunks = {MakeChunk(25, 1)};
+  batch.visibility = CloudImportBatch::Visibility::Deferred;
+  ASSERT_EQ(old_writer->Import(batch).code, CloudImportCode::Durable);
+
+  auto replacement = table.NewWriter(keys, batches);
+  ASSERT_EQ(replacement->Start().code, CloudWriterStartCode::Started);
+  EXPECT_EQ(old_writer->Import(batch).code, CloudImportCode::Fenced);
+  EXPECT_TRUE(CollectProjected(*table.OpenSnapshot(false), {0}).empty());
+  const auto indexed = table.NewIndexer(keys)->Index();
+  ASSERT_EQ(indexed.code, CloudIndexCode::Indexed);
+  EXPECT_EQ(indexed.indexed_seq, 3u);  // fence, data, replacement fence
+  auto strict = table.OpenSnapshot(false);
+  ASSERT_NE(strict, nullptr);
+  EXPECT_EQ(CollectProjected(*strict, {0}).size(), 1u);
+  EXPECT_EQ(replacement->Import(batch).code, CloudImportCode::AlreadyCommitted);
 }
 
 }  // namespace dbplay

@@ -1,89 +1,61 @@
 #include "Cloud/TableSnapshotLoader.h"
 
-#include <algorithm>
+#include <limits>
 #include <stdexcept>
 #include <utility>
-
-#include "glog/logging.h"
 
 namespace dbplay {
 
 TableSnapshotLoader::TableSnapshotLoader(TableDescriptor table, std::shared_ptr<IMetadataStore> metadata,
-                                         std::shared_ptr<ICompactedDataManifestStore> compacted_data_manifest_store)
-    : table_(std::move(table)),
-      compacted_data_manifest_store_(std::move(compacted_data_manifest_store)),
-      current_state_store_(table_.table_id, table_.metadata_prefix, std::move(metadata)) {
-  if (compacted_data_manifest_store_ == nullptr) {
-    throw std::invalid_argument("TableSnapshotLoader: compacted data manifest store is null");
-  }
+                                         std::shared_ptr<ICompactedDataManifestStore>, std::shared_ptr<IStorage> files)
+    : table_(std::move(table)), files_(std::move(files)), state_store_(table_, std::move(metadata)) {
+  if (!files_) throw std::invalid_argument("TableSnapshotLoader: null file store");
 }
 
-std::optional<TableSnapshot> TableSnapshotLoader::Load() const {
-  const auto current_state = current_state_store_.Load();
-  if (!current_state.has_value()) {
-    return std::nullopt;
-  }
+std::optional<TableSnapshot> TableSnapshotLoader::Load(size_t probe_limit) const {
+  for (int attempt = 0; attempt < 2; ++attempt) {
+    const auto current = state_store_.Load();
+    if (!current) return std::nullopt;
+    const auto manifest = state_store_.LoadManifest(current->state);
+    TableSnapshot snapshot;
+    snapshot.sequential_wal = true;
+    snapshot.current_metadata_version = current->version;
+    snapshot.current_state_version = current->state.state_version;
+    snapshot.writer_epoch = current->state.writer_epoch;
+    snapshot.indexed_seq = snapshot.compacted_cursor = current->state.indexed_seq;
+    snapshot.published_seq = snapshot.committed_cursor = current->state.published_seq;
+    snapshot.compacted_data_manifest_key = current->state.manifest_key;
+    for (const auto &file : manifest.data_files) snapshot.compacted_data_files.push_back(file.path);
 
-  const CurrentTableState &state = current_state->current_state;
-  TableSnapshot snapshot;
-  snapshot.current_metadata_version = current_state->current_metadata_version;
-  snapshot.current_state_version = state.current_state_version;
-  snapshot.writer_epoch = state.writer_epoch;
-  snapshot.compacted_cursor = state.compacted_cursor;
-  snapshot.committed_cursor = state.committed_cursor;
-  snapshot.compacted_data_manifest_key = state.compacted_data_manifest_key;
-  snapshot.latest_commit_key = state.latest_commit_key;
-
-  if (state.compacted_data_manifest_key.empty()) {
-    if (state.compacted_cursor != 0) {
-      throw std::runtime_error("TableSnapshotLoader: compacted data has no manifest");
+    bool missing_required = false;
+    uint64_t seq = current->state.indexed_seq;
+    while (seq < current->state.published_seq) {
+      ++seq;
+      auto wal = LoadSequentialWal(*files_, table_, seq);
+      if (!wal) {
+        missing_required = true;
+        break;
+      }
+      snapshot.wal_files.push_back(SequentialWalKey(table_, seq));
+      if (wal->kind == SequentialWal::Kind::Append) {
+        for (auto &chunk : wal->chunks) snapshot.wal_chunks.push_back(std::move(chunk));
+      }
     }
-  } else {
-    const auto manifest = compacted_data_manifest_store_->Load(table_, state.compacted_data_manifest_key);
-    if (!manifest.has_value()) {
-      throw std::runtime_error("TableSnapshotLoader: compacted data manifest is missing");
+    if (missing_required) continue;
+    for (size_t i = 0; i < probe_limit && seq < std::numeric_limits<uint64_t>::max(); ++i) {
+      ++seq;
+      auto wal = LoadSequentialWal(*files_, table_, seq);
+      if (!wal) break;
+      ++snapshot.probed_wal_count;
+      snapshot.wal_files.push_back(SequentialWalKey(table_, seq));
+      if (wal->kind == SequentialWal::Kind::Append) {
+        for (auto &chunk : wal->chunks) snapshot.wal_chunks.push_back(std::move(chunk));
+      }
     }
-    if (manifest->table_id != table_.table_id || manifest->compacted_cursor != state.compacted_cursor) {
-      throw std::runtime_error("TableSnapshotLoader: compacted data manifest does not match CURRENT");
-    }
-    snapshot.compacted_data_files = manifest->compacted_data_files;
+    snapshot.probe_limit_reached = probe_limit > 0 && snapshot.probed_wal_count == probe_limit;
+    return snapshot;
   }
-
-  // Walk the commit chain backward from latest_commit_key to compacted_cursor
-  // using only GETs (parent_commit_key pointers) -- the hot-path zero-LIST contract. Each
-  // step validates cursor contiguity so a broken/forked chain faults loudly
-  // rather than silently returning a snapshot with missing rows.
-  uint64_t cursor = state.committed_cursor;
-  std::string commit_key = state.latest_commit_key;
-  while (cursor > state.compacted_cursor) {
-    if (commit_key.empty()) {
-      throw std::runtime_error("TableSnapshotLoader: commit chain ended before compacted cursor");
-    }
-    const auto record = current_state_store_.LoadCommitRecord(commit_key);
-    if (!record.has_value()) {
-      throw std::runtime_error("TableSnapshotLoader: commit record is missing");
-    }
-    if (record->last_cursor != cursor || record->first_cursor <= state.compacted_cursor ||
-        record->first_cursor > record->last_cursor) {
-      throw std::runtime_error("TableSnapshotLoader: commit chain is not contiguous");
-    }
-    snapshot.wal_commit_records.push_back(*record);
-    cursor = record->first_cursor - 1;
-    commit_key = record->parent_commit_key;
-  }
-  if (cursor != state.compacted_cursor) {
-    throw std::runtime_error("TableSnapshotLoader: commit chain crossed compacted cursor");
-  }
-
-  std::reverse(snapshot.wal_commit_records.begin(), snapshot.wal_commit_records.end());
-  for (const auto &record : snapshot.wal_commit_records) {
-    snapshot.wal_files.insert(snapshot.wal_files.end(), record.wal_files.begin(), record.wal_files.end());
-  }
-  VLOG(1) << "TableSnapshotLoader: table=" << table_.table_id
-          << " loaded snapshot compacted=" << snapshot.compacted_cursor << " committed=" << snapshot.committed_cursor
-          << " compacted_data_files=" << snapshot.compacted_data_files.size()
-          << " wal_files=" << snapshot.wal_files.size();
-  return snapshot;
+  throw std::runtime_error("TableSnapshotLoader: published WAL is missing");
 }
 
 }  // namespace dbplay

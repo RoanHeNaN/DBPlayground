@@ -56,6 +56,7 @@ class MemOutputStream : public IOutputStream {
 }  // namespace
 
 std::unique_ptr<IInputFile> MemStorage::OpenInput(const std::string &path) {
+  std::lock_guard<std::mutex> lock(mutex_);
   auto it = files_.find(path);
   if (it == files_.end()) {
     return nullptr;
@@ -67,9 +68,20 @@ std::unique_ptr<IOutputStream> MemStorage::OpenOutput(const std::string &path) {
   return std::make_unique<MemOutputStream>(this, path);
 }
 
-bool MemStorage::Exists(const std::string &path) const { return files_.count(path) != 0; }
+CreateFileResult MemStorage::CreateIfAbsent(const std::string &path, const Slice &bytes) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (files_.count(path) != 0) return CreateFileResult::AlreadyExists;
+  files_.emplace(path, std::string(bytes.data(), bytes.size()));
+  return CreateFileResult::Created;
+}
+
+bool MemStorage::Exists(const std::string &path) const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return files_.count(path) != 0;
+}
 
 std::vector<std::string> MemStorage::List(const std::string &prefix) const {
+  std::lock_guard<std::mutex> lock(mutex_);
   std::vector<std::string> out;
   for (const auto &kv : files_) {
     if (kv.first.compare(0, prefix.size(), prefix) == 0) {
@@ -79,8 +91,14 @@ std::vector<std::string> MemStorage::List(const std::string &prefix) const {
   return out;
 }
 
-void MemStorage::Delete(const std::string &path) { files_.erase(path); }
+void MemStorage::Delete(const std::string &path) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  files_.erase(path);
+}
 
-void MemStorage::Put(const std::string &path, std::string bytes) { files_[path] = std::move(bytes); }
+void MemStorage::Put(const std::string &path, std::string bytes) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  files_[path] = std::move(bytes);
+}
 
 }  // namespace dbplay

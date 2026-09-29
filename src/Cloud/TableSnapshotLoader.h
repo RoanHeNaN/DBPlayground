@@ -6,24 +6,24 @@
 
 #include "Cloud/CloudTypes.h"
 #include "Cloud/ICompactedDataManifestStore.h"
+#include "Cloud/SequentialProtocol.h"
 #include "Metadata/IMetadataStore.h"
-#include "Metadata/TableCurrentStateStore.h"
 
 namespace dbplay {
 
-// Resolves one immutable query view from known keys only:
-// CURRENT -> compacted-data manifest + backward commit chain. It never calls LIST.
+// Resolves a CURRENT/manifest snapshot and contiguous WAL sequence without LIST.
 class TableSnapshotLoader {
  public:
   TableSnapshotLoader(TableDescriptor table, std::shared_ptr<IMetadataStore> metadata,
-                      std::shared_ptr<ICompactedDataManifestStore> compacted_data_manifest_store);
+                      std::shared_ptr<ICompactedDataManifestStore> compacted_data_manifest_store,
+                      std::shared_ptr<IStorage> files);
 
-  std::optional<TableSnapshot> Load() const;
+  std::optional<TableSnapshot> Load(size_t probe_limit = 0) const;
 
  private:
   TableDescriptor table_;
-  std::shared_ptr<ICompactedDataManifestStore> compacted_data_manifest_store_;
-  TableCurrentStateStore current_state_store_;
+  std::shared_ptr<IStorage> files_;
+  SequentialStateStore state_store_;
 };
 
 }  // namespace dbplay

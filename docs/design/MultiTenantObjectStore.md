@@ -1,418 +1,242 @@
-# 多租户对象存储布局 — namespace + manifest + CAS(turbopuffer 式)
+# 多租户对象存储：顺序 WAL、按需可见性与后台索引
 
-> Status: **design proposal**(未实现)。
-> 目标:让 DBPlayground 往 turbopuffer 方向看齐——**对象存储优先、节点无状态、
-> 按 namespace 隔离多租户**,且**热路径不依赖 S3 LIST**。
-> 这篇补齐 [`StorageAbstraction.md`](StorageAbstraction.md) 里标注为 TODO 的
-> **Table Format 层**(Iceberg 式多文件元数据/快照)与 **Catalog** 职责——但用
-> "每 namespace 一个 manifest 对象 + CAS"取代中心化 catalog 服务。
-> 数据文件沿用 [`NativeColumnarFileFormat.md`](NativeColumnarFileFormat.md) 的 `DBC1`。
+> 状态：顺序 WAL、双水位、按需发布、自适应探测和 WAL → manifest + data 索引发布的核心路径已实现。后续 data → data compaction、WAL 回收与列统计仍属后续工作。
+> 范围：一个 namespace 对应一张表和一组独立的对象。数据与元数据均存于对象存储，查询和写入的正常路径不依赖 LIST。
 
----
+## 1. 目标与基本约束
 
-## 0. 设计立场:为什么不用中心化 catalog
+每个 namespace 通过一个可条件更新的 `CURRENT` 对象维护元数据根状态。WAL 和列式数据文件不可变。一个 namespace 的 WAL 使用全局连续序号 `1, 2, 3, ...`，文件名只有序号，没有 writer ID。写者可以选择数据写完后立即对查询可见，也可以选择先完成持久化、由后台索引最终发布。
 
-真正的对立不是 "prefix vs catalog",而是**元数据放哪、谁来协调原子提交**:
+设计需要同时满足：
 
-| 方案 | 元数据在哪 | 原子提交 | 无状态? | 结论 |
-|------|-----------|---------|---------|------|
-| 纯 prefix + LIST | 无,靠枚举 | 做不到 | 是 | ❌ 热路径要 LIST,不可用 |
-| **本设计(turbopuffer 式)** | 每 ns 一个 S3 对象 | S3 CAS | **是** | ✅ 无状态 + 不靠 LIST |
-| 中心化 catalog | 独立服务/DB | catalog 事务 | 否 | 功能全,但百万 ns 下是瓶颈/单点 |
+- **持久化与可见性分离**：WAL 对象写入成功表示数据已持久化；是否对严格查询可见由 `CURRENT` 的已发布水位决定。
+- **单写者顺序**：同一 namespace 同一时刻只有一个有效 writer epoch；切换 writer 时必须阻止旧 writer 继续占用 WAL 序号。
+- **连续发现**：读者和后台索引从已知水位开始按序号探测 WAL，遇到第一个不存在的序号便停止，不靠 LIST 建立写入顺序。
+- **原子发布**：列式文件写完后，通过一次 `CURRENT` CAS 发布新的索引结果。任何未被发布的输出文件都不可作为严格读的依据。
+- **两种读语义**：严格读必须包含读取 `CURRENT` 时已发布的全部数据；尽力读可额外探测尚未发布的 WAL，扫描数量由自适应参数控制。
 
-**关键洞察:不需要中心化 catalog 也能不靠 LIST。** 把"每 namespace 的元数据"
-物化成对象存储里的一个 `CURRENT` 指针 + 不可变 manifest,用**条件写(CAS)**做
-原子切换,用**确定性命名**做发现。它等于一个分布式的、无状态的 per-namespace
-mini-catalog。这正是 turbopuffer 的做法:无 Raft / Paxos / ZooKeeper。
+S3 对成功 PUT 后的 GET 和 LIST 提供强一致性；这里避免在热路径使用 LIST 是为了控制请求量和建立明确的顺序协议，不是因为 S3 LIST 只有最终一致性。实现依赖目标对象存储对单对象写入的原子性和条件创建能力。
 
-热路径为什么不能用 LIST:分页每次最多 1000 key、单次几十~几百 ms、比 GET 贵。
-放进 "sub-second 冷查询" 目标里是灾难。LIST 只在**维护/GC/灾难恢复**这种冷路径用。
+## 2. 对象布局
 
----
-
-## 1. 对象存储布局(每 namespace 一个前缀)
-
-```
-bucket/
-  <namespace>/                         ← 租户隔离边界 = 前缀。冷 ns ≈ 几个对象,近零成本
-    CURRENT                            ← 极小指针对象,CAS 的唯一目标(见 §3)
-    manifest/
-      manifest-<uuid>.json             ← 不可变 manifest 快照(每次提交产生一个新的)
-      manifest-<uuid>.json
-    wal/
-      00000001.wal                     ← append-only,确定性顺序命名(见 §5)
-      00000002.wal
-    data/
-      data-<uuid>.dbc1                 ← 不可变 DBC1 列文件(flush/compaction 产物)
-      data-<uuid>.dbc1
-    index/                             ← 可选,未来 zone map / 向量索引(Lance 式独立索引层)
-      zonemap-<uuid>.idx
+```text
+<namespace>/
+  metadata/
+    CURRENT                         可变；只能通过条件写更新
+    manifest/<unique-key>.meta      不可变；已索引数据文件集合与批次去重索引
+    dedup/<unique-key>.idx          不可变；已索引批次 ID 到 WAL 序号的映射
+  files/
+    wal/00000000000000000001.wal    不可变；序号为 1 的 WAL 或 fencing 标记
+    wal/00000000000000000002.wal
+    data/<unique-key>.dbc1          不可变；后台索引与后续压缩的产物
 ```
 
-原则:
-- **一切数据文件不可变**(对象存储不能原地改、不能 append)。写 = 产新文件。
-- **`CURRENT` 是唯一可变对象**,且只通过 CAS 改。它是这个 namespace 的"根指针"。
-- **文件用 uuid 命名**(除 WAL),这样并发写各自产文件永不撞名;谁的提交生效由
-  CURRENT 的 CAS 裁决,没胜出的文件成为孤儿,由 GC 清理。
+路径中的零填充只方便人工检查和按名称排序；协议依据的是文件内的序号，不依赖对象列表的顺序。WAL 一旦成功创建不得覆盖，也不得在序号仍可能被读取时删除。`CURRENT` 是唯一需要原地更新的根对象。manifest 和数据文件采用防碰撞的唯一键。
 
----
+## 3. `CURRENT` 与 manifest 的内容
 
-## 2. Manifest 格式(per-namespace 的 mini-catalog)
+以下 JSON 用来规定**逻辑字段和含义**。实际对象可以采用有版本号的二进制编码；编码方式不能改变字段的校验规则。所有路径均相对于 namespace，不能指向其他表的对象。
 
-一个不可变 JSON 对象,描述"当前这个版本由哪些文件组成 + schema + 裁剪所需 stats"。
-读一次 manifest 就知道要读哪些 `DBC1` 文件——**不需要 LIST**。
+### 3.1 `CURRENT`：根状态与可见水位
 
 ```jsonc
 {
-  "format_version": 1,
-  "namespace": "acme",
-  "version": 43,                       // 单调递增,便于人读/排错;权威性由 CAS 保证
-  "parent": "manifest-<prev-uuid>.json",
-  "schema": {                          // ← schema 持久化进元数据(DBC1 现状缺,这里补上)
-    "fields": [
-      { "name": "id",  "type": "Int64"  },
-      { "name": "ts",  "type": "Int64"  },
-      { "name": "msg", "type": "String" }
-    ]
-  },
-  "data_files": [
-    {
-      "path": "data/data-<uuid>.dbc1",
-      "row_count": 100000,
-      "row_range": [0, 100000],        // 用于按位置定位(配合 ColumnarReadPath 的 ReadRange)
-      "column_stats": [                // ← 文件级 stats,先 prune 掉整个文件(见 StorageAbstraction 的 stats 分叉)
-        { "field": "id", "min": "1",          "max": "100000",     "null_count": 0 },
-        { "field": "ts", "min": "1699999999",  "max": "1700086399", "null_count": 0 }
-      ]
-    }
-  ],
-  "wal_applied_seq": 17,               // WAL 已折叠进 data_files 的水位(见 §5 一致性)
-  "created_at_hint": "..."             // 仅信息用(不参与正确性;时间戳由外部传入)
+  "format_version": 2,
+  "table_id": "tenant-a/events",
+  "state_version": 27,
+  "schema_version": 1,
+  "writer_epoch": 4,
+  "indexed_seq": 12,
+  "published_seq": 14,
+  "manifest_key": "manifest/8f3c.meta"
 }
 ```
 
-设计要点:
-- **stats 走 Lance 路线**:放在 manifest(表元数据层),不焊进 `DBC1` footer。
-  文件格式保持稳定,"要不要建 zone map、建多细"是上层可插拔决策。文件级 stats
-  先 prune 整个文件;更细的 zone map 未来放 `index/`。
-- manifest 只增不改。版本 43 引用版本 42 的大部分文件 + 新增文件,是**增量快照**。
+| 字段 | 类型及含义 |
+|---|---|
+| `format_version` | 无符号整数；根状态的编码版本，当前为 2。 |
+| `table_id` | 非空字符串；读取 manifest 或 WAL 时都要核对所属表。 |
+| `state_version` | 无符号整数；每次成功 CAS 后加一，用于检测错误转移和排查问题。真正的 CAS 前提是对象存储返回的版本标识。 |
+| `schema_version` | 无符号整数；当前写入使用的 schema 版本。对应 schema 定义由 manifest 保存。 |
+| `writer_epoch` | 无符号整数；当前有效写者的任期。首次创建时为 0，取得写入权时递增。 |
+| `indexed_seq = C` | 无符号整数；`≤ C` 的有效 WAL 已由 manifest 引用的 data 文件覆盖。fencing 标记占序号但不产生数据行。此水位由 WAL 索引阶段推进，与后续列式 compaction 无关。 |
+| `published_seq = P` | 无符号整数；`≤ P` 的 WAL 对严格查询可见，包括尚未索引的尾部。 |
+| `manifest_key` | 非空的 manifest 相对路径；首次创建表时即指向覆盖水位 0 的初始 manifest。 |
 
----
+创建表时先写包含 schema、空 `data_files` 和空 `batch_index_files` 的初始 manifest，再条件创建 `CURRENT`。初始 `CURRENT` 的 `state_version = writer_epoch = C = P = 0`，`manifest_key` 指向该 manifest。始终满足 `0 ≤ C ≤ P`，各水位与 epoch 不得回退。`CURRENT` **不保存每个 WAL 的路径或已持久化的最大序号**：路径由序号确定，延迟可见的尾部可以满足 `seq > P`。对象存储返回的 ETag 或版本标识不写进 `CURRENT` 内容，只用于下一次 CAS。上例表示 manifest 覆盖至 12，严格查询还必须读取 WAL 13 和 14；WAL 15 即使已存在，也可能尚未发布。
 
-## 3. `CURRENT` 指针 + CAS(原子提交的核心)
-
-`CURRENT` 是个极小对象,内容就是"当前生效的 manifest 是谁":
+### 3.2 manifest：已索引数据和去重索引
 
 ```jsonc
-{ "version": 43, "manifest": "manifest/manifest-<uuid>.json" }
+{
+  "format_version": 2,
+  "table_id": "tenant-a/events",
+  "covered_through_seq": 12,
+  "schema_version": 1,
+  "schema": [
+    { "column_id": 0, "name": "id", "type": "Int64" },
+    { "column_id": 1, "name": "message", "type": "String" }
+  ],
+  "data_files": [
+    {
+      "path": "files/data/61ab.dbc1",
+      "first_seq": 1,
+      "last_seq": 12,
+      "row_count": 4200,
+      "column_stats": [
+        { "column_id": 0, "min": 1, "max": 4200, "null_count": 0 }
+      ]
+    }
+  ],
+  "batch_index_files": ["dedup/4c9e.idx"]
+}
 ```
 
-- **读**:一次 `GET CURRENT` → 拿到 manifest 路径 + 该对象的 **version tag**(S3 ETag /
-  GCS generation)→ 再一次 `GET manifest-<uuid>.json`。**打开一个 namespace = 2 次 GET**,
-  零 LIST。
-- **写(原子提交)**:`PutIfMatch(CURRENT, 新内容, expected_tag)`——仅当 `CURRENT`
-  的当前 tag 等于我读到的 tag 时才写成功。这就是乐观并发:两个写者只有一个能赢。
+`covered_through_seq` 必须等于引用它的 `CURRENT.indexed_seq`，`table_id` 和 `schema_version` 也必须相同。`data_files` 是截至该水位的**完整有效列式文件集合**，不是仅列出本轮新增文件；后续列式 compaction 可以替换物理文件，但不能改变逻辑数据。`first_seq`／`last_seq` 标记文件的 WAL 来源范围，供审计和恢复使用；一个范围可以含不产生行的 fencing 标记，不能据此单独推断该范围每个序号都有数据。`row_count` 与可选的 `column_stats` 用于读取和裁剪，不参与 WAL 发布判定。初始状态或只有 fencing 标记而无数据行时，`data_files` 可以为空。首个版本保持 schema 不变；未来若支持 schema 演进，manifest 还须保存能解释未索引 WAL 的历史 schema 定义。
 
-CAS 落在不同对象存储上的原语(抽象成 §6 的 `IStorage` 接口):
-- **S3**:`If-Match: <etag>` 条件 PUT(2024 起支持)、`If-None-Match: *` 创建即写。
-- **GCS**:`x-goog-if-generation-match`(长期支持)。
-- **Azure Blob**:`If-Match` ETag 条件。
-- **Local/Mem**(测试用):进程内锁 + 版本号模拟 CAS。
+`batch_index_files` 中的路径相对于 `metadata/`，指向不可变索引对象；`manifest_key` 也相对于 `metadata/`。每条索引至少保存 `batch_id → {seq, operation_id, payload_digest}`；写者查询这些索引和未索引 WAL，才能识别跨 writer 切换与列式 compaction 的重试。manifest 必须引用覆盖已索引有效批次的完整索引集合；合并索引时可以换新文件，但不能丢失仍在幂等保留期内的批次。索引保留期及过期后的重试语义应由 API 明确规定。
 
----
+发布顺序是先写完 DBC1 和去重索引，再写不可变 manifest，最后 CAS 更新 `CURRENT.manifest_key` 与 `C`。读者固定一次 `CURRENT` 版本，按该版本加载 manifest；manifest 缺失、所属表不符或水位不符都是错误，不能退回到猜测对象列表。
 
-## 4. 提交流程(乐观并发 + 重试)
+## 4. WAL 文件内容
 
-```
-写者:
- 1. GET CURRENT              → (version V, manifest M_v, tag T)
- 2. GET M_v                  → 当前文件集合 + schema + wal_applied_seq
- 3. 产出新 data 文件         → PutIfAbsent("data/data-<uuid>.dbc1", ...)   (uuid,不撞名)
- 4. 构造 manifest V+1        → 引用(旧文件 ∪ 新文件),写:
-                               PutIfAbsent("manifest/manifest-<uuid2>.json", ...)
- 5. CAS 切换根指针:
-        PutIfMatch(CURRENT, {version:V+1, manifest:M_{v+1}}, expected_tag=T)
-      ├─ 成功 → 提交完成,V+1 生效
-      └─ 失败(别人先提交了)→ 回到步骤 1,把本次变更 rebase 到更新的 manifest 上,
-                              重新写 manifest-<uuid3> 再 CAS。
-                              步骤 4 写的孤儿 manifest / 步骤 3 的孤儿 data 文件留给 GC。
-```
+每个 `files/wal/<seq>.wal` 是一个完整、不可覆盖的对象，包含一个写入提交单元或一个 fencing 标记。它不是可以在 S3 上原地追加的共享文件。正常写入可以把多个客户端 batch 合成一个提交单元，并包含多个 Chunk。
 
-性质:
-- **原子性**:生效与否只取决于 CURRENT 的一次 CAS;要么整批文件可见,要么完全不可见。
-- **无锁、无协调服务**:并发靠 CAS 裁决,失败者重试(rebase)。对应 turbopuffer 的
-  "S3 CAS 取代 Raft/ZK"。
-- **孤儿文件**:CAS 失败者写出的文件无人引用 → 后台 GC 用 LIST(冷路径,可容忍慢)
-  找出"不被任何存活 manifest 引用"的对象删除。
+目标二进制布局如下。整数使用小端编码，变长字符串与数组带长度；编码器对长度、条目数和总大小设置上限。
 
----
-
-## 5. WAL + 强一致读(可选,turbopuffer 写路径)
-
-> 若本轮只做"存储布局 + manifest + 原子提交",可跳过本节;WAL 是加上"高频写 +
-> read-your-writes"时的增量。放在这里让布局一次性设计到位。
-
-### 5.1 WAL 里装什么:变更操作,不是索引结果
-
-关键区分:**WAL 存逻辑变更(mutation),不是建好的列存/索引**。这样写入只需 append,
-把"整理成列式 + 建 stats"这件贵活儿推给后台。一个 WAL 文件 = 若干自描述 entry:
-
-```
-wal/<seq>.wal  (append-only,一个文件可含多个 batch)
-┌───────────────────────────────────────────────────────────┐
-│ WalEntry:                                                    │
-│   seq            u64   全局递增序号                            │
-│   op             u8    Append / Delete                       │
-│   schema_version u32   指向 manifest 里的 schema(演进用)       │
-│   row_count      u64                                         │
-│   payload:                                                   │
-│     Append → 一个序列化的 Chunk(复用现有 Chunk/Column/Value)   │
-│     Delete → 受影响的 key 列表 / 谓词(墓碑 tombstone)          │
-│   crc32          u32   末尾校验(截断/半写检测)                 │
-└───────────────────────────────────────────────────────────┘
+```text
+magic = "DBW2", format_version: u32
+entry_kind: u8                 Append 或 Fence
+table_id: length + bytes
+seq: u64, writer_epoch: u64, schema_version: u64
+operation_id: length + bytes   一次提交单元的稳定幂等 ID
+batch_ids: count + [length + bytes]*
+chunk_count: u32
+chunks:
+  row_count: u32
+  payload_size: u32
+  payload: [row_length: u32 + RowCodec row bytes]*
+  crc32: u32                    覆盖本 chunk 的行数、长度和 payload
+footer:
+  total_row_count: u64
+  payload_digest: 32 bytes     schema 版本、batch_ids 与行数据的 SHA-256，供重试核对
+  file_crc32: u32               覆盖 footer 之前的整个文件
+  magic = "DBW2"              检测截断或不完整写入
 ```
 
-设计取舍:
-- **payload 用行式,复用现有 `RowCodec`**(不用 `DBC1` 列式)。WAL 目标是"写得快、
-  条目小、易 append",列式批量压缩优势在小 batch 上用不上;重放/compaction 时再转列。
-  → **写走行式 log,读走列式,后台把行转列**,正好呼应 repo 里 row/columnar 两个
-  `IFileFormat` 并存的设计。
-- **update = delete + append**;delete 落**墓碑**,不原地删(data 文件不可变)。读时
-  做 merge-on-read(§5.4)。
+例如 `files/wal/00000000000000000015.wal` 的**解码后逻辑内容**可以是：
 
-写路径(高频写,不每次都提交 manifest):
+```jsonc
+{
+  "entry_kind": "Append",
+  "table_id": "tenant-a/events",
+  "seq": 15,
+  "writer_epoch": 4,
+  "schema_version": 1,
+  "operation_id": "import-request-72",
+  "batch_ids": ["client-batch-72"],
+  "chunks": [{ "rows": [[4201, "event-4201"], [4202, "event-4202"]] }],
+  "total_row_count": 2
+}
 ```
-写者 append:PutIfAbsent("wal/<seq+1>.wal", batch)   ← seq 确定性递增,S3 确认=已持久化
-```
-WAL 写比 manifest 提交频繁得多;用确定性顺序命名,不用每条都改 CURRENT。
 
-### 5.2 后台合并层级 1:WAL → DBC1(flush / 异步索引)
+`Fence` 使用同一文件头，记录新 epoch 和唯一的 `operation_id`，但 `batch_ids`、`chunks` 均为空，`total_row_count = 0`。例如序号 16 的标记在解码后是 `{ "entry_kind": "Fence", "seq": 16, "writer_epoch": 5, "operation_id": "fence-epoch-5", "batch_ids": [], "chunks": [] }`。它占一个序号，不参与查询结果或批次去重，也不生成 DBC1 行。`Append` 必须有非空批次 ID 与有效数据，且 schema 与头部版本相符。读者核对文件名和头部 `seq`、表 ID、行数、CRC、digest 及结尾标记；任何不符都不能当作有效 WAL。
 
-```
-后台 indexing 节点(无状态,任意节点可做):
-  读 wal/<wal_applied_seq+1 .. N>.wal
-  → 行式 batch 转列式,建文件级 stats(min/max/null)
-  → 写 data/data-<uuid>.dbc1
-  → 提交新 manifest(§4 的 CAS):data_files += 新文件,wal_applied_seq = N
-  → 被折叠的 WAL 文件之后可 GC
-```
-把"行式增量日志"变成"列式可分析文件" = turbopuffer 的异步索引。做完后查询重放的
-WAL 长度归零。
+首个落地版本只支持 Append 和 Fence。Delete、Update 与墓碑需要另行定义编码、重放顺序和读时合并规则。目标格式 `DBW2` 需要从现有 `WalFileFormat` 的 `DBW1` 增加元数据字段；WAL 存可重放的数据与幂等信息，不存已生成的 DBC1 文件。
 
-### 5.3 后台合并层级 2:DBC1 → 更大的 DBC1(compaction 本体)
+## 5. writer 启动、序号与 fencing
 
-flush 会产出很多**小 DBC1 文件**(每次 flush 一个)。小文件多 = 每次查询打开的文件多
-= **GET 请求数爆炸**(对象存储头号成本)。size-tiered 合并:
-```
-  挑一批小 data 文件 + 相关墓碑
-  → 归并、应用 delete(墓碑对应行真正丢弃)、重排、重新分 row group、更新 stats
-  → 写一个大 DBC1 文件
-  → 提交新 manifest:data_files 用大文件替换那批小文件
-  → 旧小文件成孤儿,GC
-```
-干三件事:**① 减少文件数(降 GET)② 物化删除(merge-on-read → copy-on-write)
-③ 重组 row group / 更新 stats 让 pruning 更有效**。即 LSM 的 size-tiered compaction。
+写者先读取 `CURRENT`，用 CAS 将 `writer_epoch` 加一。取得新 epoch 后，从 `C+1` 开始按序检查现存 WAL，验证序号连续，直到找到第一个不存在的序号 `S`。已有 WAL 可能属于先前 writer 的延迟可见写入，不能因为它们尚未被 `CURRENT` 引用就忽略。若后台索引和 GC 在扫描期间推进了 `C`，写者须重读 `CURRENT`：候选槽位 `S ≤ C` 时重新从最新的 `C+1` 扫描，不能把已回收的旧序号重新用作 WAL 名称。
 
-**并发安全**:compaction 产出也走 §4 的 CAS 提交;它只是"换一批文件的等价表示",
-不改变逻辑数据,所以 CAS 失败时**直接丢弃重来永远安全**——这是它能无锁并发的根本。
-触发条件:未折叠 WAL 字节超阈值 / 小文件数超阈值 / 定时。
+新 writer 用“仅当对象不存在才创建”的条件 PUT，在 `wal/S.wal` 写入自己的 fencing 标记：
 
-### 5.4 读路径:merge-on-read
+- 创建成功：该标记之后，新 writer 才可接受写入。
+- 槽位被旧 writer 抢先写入：验证已有文件，改试 `S+1`，直到自己的标记成功。
+- 请求结果不明：读取 `wal/S.wal`，按 epoch、操作 ID 和校验判断是否为自己的标记，再决定继续或重试。
 
-任意时刻一个 namespace 的完整数据 =
-```
-  已 compact 的大 DBC1  +  未 compact 的小 DBC1  +  未 flush 的 WAL  −  生效中的墓碑
-```
-查询做 **merge-on-read**:三部分合并后扣掉墓碑命中的行。compaction 就是把"读时合并"
-的代价逐步搬到后台"写时合并",让读越来越便宜。
+正常写入也只能**按序、单个在途**地条件创建下一个 WAL。不得预留后面的序号或并行上传同一 namespace 的多个新 WAL。旧 writer 若在新 epoch 的标记之前赢得一个槽位，新 writer 会先发现该 WAL 再继续争抢；标记一旦占住下一个槽位，旧 writer 的后续条件 PUT 就会失败，随后必须读取标记并停止。旧 writer 在每次写入前还应检查 `CURRENT.writer_epoch`，以减少无效写；真正的 fencing 仍由条件创建和连续槽位规则保证。
 
-强一致读(read-your-writes,不用 LIST):
-```
-查询:
- 1. GET CURRENT → GET manifest → 拿到 data_files + wal_applied_seq = A
- 2. 读 data_files(用 column_stats 先 prune)
- 3. 重放尚未折叠的 WAL:从 seq = A+1 开始,GET wal/<A+1>.wal, <A+2>.wal ...
-    直到 404 为止(确定性命名 → 逐个 GET,零 LIST)
- 4. 结果 = data 文件结果 ⊕ WAL 增量  → 立刻看到刚写的数据
-```
-- 未折叠 WAL 数量有上界(compaction 跟进);超过阈值(turbopuffer 是 128MiB)就退化
-  为"必须等索引完才可见",对应它的强一致塌陷边界。
-- 想要 sub-10ms 可跳过步骤 3,降级最终一致(worst case 落后一个 compaction 周期)。
+这些规则不允许“已分配但永远没有对象”的序号。写入失败时重试同一槽位或明确放弃且保持它为空；不能跳到 `S+1` 留下缺口。对已经存在的同名对象绝不能使用普通覆盖 PUT。S3 的 `If-None-Match: *` 是条件创建；本地和内存存储需要提供相同的原子语义。
 
-### 5.5 并发写:两个流派 + 收敛方案
+## 6. 写入与可见性
 
-一个 namespace 被多节点并发写时,"给写建立全局顺序"必然需要一个**串行化点**,冲突
-不可消除,只能选择放在哪。业界有两派现成实现(都在纯 S3 + CAS 上做到无中心节点):
+每个写入请求声明 `visibility`：
 
-| | **SlateDB 派**(WAL + fencing) | **WarpStream 派**(先落后排) |
+| 模式 | 成功返回的条件 | 对严格查询的承诺 |
 |---|---|---|
-| 写模型 | **单写者**,epoch fencing 排他 | **无 leader**,任意节点并发写 |
-| 顺序 | WAL 顺序写(SST ID 递增) | 先落 S3,后 sequencing(land first, sequence later) |
-| 协调点 | manifest CAS + `writer_epoch` | commit 时的 CURRENT CAS / 元数据 store |
-| 冲突 | 抢 SST ID,epoch 低者被 fence halt | append 无冲突,冲突推迟到 sequencing |
+| `Immediate` | WAL 完整持久化，且 `CURRENT.published_seq` 已通过 CAS 推进到该 WAL 的序号或更高。 | 写入成功返回后启动的严格查询必须看到这批数据。 |
+| `Deferred` | WAL 完整持久化，且写者确认序号与操作 ID；不要求更新 `CURRENT`。 | 查询可以提前看到，但必须在后台索引成功发布后稳定可见。 |
 
-三个反直觉但关键的结论:
+写入步骤为：检查批次幂等状态，确定下一个连续序号，条件创建 WAL，确认对象内容，然后按模式决定是否发布。`Immediate` 写入若得到序号 `S`，在 CAS 中把 `P` 推进到至少 `S`。这样也会一并发布该序号之前仍未发布的连续 WAL，这是水位语义的必然结果。CAS 与后台索引并发失败时，重新读取 `CURRENT`，核对 `writer_epoch`，保留较大的水位，并确认自己的序号已经被覆盖后再返回成功。若 epoch 已改变，旧 writer 不得替新 writer 更新 `CURRENT`；它可以在确认 `P ≥ S` 后报告成功，否则只能返回结果待确认状态。无法完成发布时，不能谎称满足立即可见承诺。
 
-1. **正确性来自 CURRENT 的 CAS,不是来自锁/leader。** 多个节点可同时以为自己该
-   compaction:各读 `CURRENT(V,tag T)` → 干活 → `PutIfMatch(CURRENT, V+1, expected=T)`,
-   **只有一个 CAS 成功,其余丢弃重来**。因 compaction 产出与输入语义等价,丢弃永远安全。
-   ⇒ **无需选举一个"正确的 leader",只需一次"正确的 commit"。** CAS 本身就是分布式选举
-   原语,替代 Raft/ZK。租约(`<ns>/LOCK`,带 TTL,best-effort CAS)只是**省重活的优化**,
-   选错也不影响正确性。
+`Deferred` 的成功表示“已持久化”，不是“已被索引”或“已对所有查询可见”。写入结果应明确返回序号和持久化状态；客户端若随后需要严格读，可以等待该序号被发布，或发起带目标序号的读并等待系统完成发布。后台索引延迟或失败时，延迟可见写入不会自动得到时限保证，需要监控积压并重试索引任务。
 
-2. **Fencing 可以免费。** 若每次 commit 都 condition 在 CURRENT 的 tag 上,stale 写者
-   (GC 暂停后苏醒)的 CAS 必然失败(CURRENT 已推进)→ **CURRENT 的 tag 就是 fencing
-   token**,不需额外机制。只有当写者绕过 CURRENT 直接抢 WAL 槽位(SlateDB 那样)时,才
-   需要显式 `writer_epoch`:新写者启动 bump epoch 并往 WAL 写空 SST 把旧写者 fence 掉,
-   旧写者下次写时发现更高 epoch 便 halt。
+客户端重试使用稳定的 `batch_id`／操作 ID。写者先检查未索引 WAL，再检查 manifest 中的持久化批次去重索引；同一批次不得因为换了 writer epoch 或完成了索引或列式 compaction 而再次导入。请求结果不明时先检查目标槽位内容。只有 WAL 内信息而没有跨索引与列式 compaction 的持久化去重索引，不能承诺长期 exactly-once。
 
-3. **纯导入不需要定序(可交换)。** append-only 的并发写结果是集合并,谁先谁后不影响
-   最终数据;只有对同一主键的 delete/update 才需定序。
+## 7. 查询与自适应 WAL 探测
 
-**收敛方案(DBPlayground 采用)——导入走 WarpStream 派:**
-- 每个 writer 写**自己的前缀** `wal/<writer_id>/<seq>.wal`:append **零冲突、零重试、
-  每 batch 恰好 1 次 PUT**(直接消除乐观并发的重试风暴与成本)。
-- compaction 时抢 `merge.lock` 所有权(CAS);赢家做 compaction + 走 CURRENT-CAS 提交。
-- `WalEntry` 带 **`batch_id`**(客户端幂等键):CAS 重试或"PUT 超时但其实成功"这类模糊
-  失败下,定序/合并时按 `batch_id` 去重,保证 exactly-once。
-- **caveat — 发现与读可见性**:writer 各写各前缀后没有全局顺序。
-  - compaction 是**后台冷路径 → 允许 `List(wal/)`** 找齐所有段(热路径才禁 LIST)。
-  - 但强一致读要看到"刚导入、未 compact"的数据就得 LIST 所有 writer 前缀 → LIST 上了
-    热路径。取舍:**① 导入期接受最终一致**(bulk load 不边导边精确查,推荐);或
-    **② 维护轻量 open-segments 注册**(writer 写完段后 CAS append 一条 `{writer,seg,batch_id}`
-    到共享列表,读它而非 LIST)——把 WarpStream 的 sequencing 落成一个小共享结构。
+一次查询首先读取 `CURRENT` 和对应 manifest，固定 `C`、`P` 与列式文件集合。随后按序处理两段 WAL：
 
-### 5.6 compaction 提交与 WAL 删除的原子性
+1. **必读段 `(C, P]`**：严格查询必须读取全部 WAL，跳过 fencing 标记并重放数据 WAL。若这个范围内缺文件、校验失败或读到不连续序号，不能把部分结果作为成功返回；应重读 `CURRENT` 后重试，仍异常则报错。
+2. **探测段 `(P, P+N]`**：查询可按序探测最多 `N` 个未发布 WAL。遇到第一个不存在的文件即停止；存在的完整 WAL 可纳入这次尽力读。fencing 标记占用一个探测序号，但不产生行。探测段的结果不构成写后可见保证。
 
-问题:compaction 要"①提交新 manifest(抬高 `wal_applied_seq`)②删除被折叠的 WAL",
-这两步怎么原子?**答案:不让它俩原子,降成"一次原子提交 + 一个幂等 GC"。**
+默认查询至少覆盖必读段。调用方可以选择只读已发布快照，或额外启用尽力探测。`Immediate` 的承诺由必读段保证，不依赖 `N`；`Deferred` 写入可能因 `N` 不足而暂时未被看到，即使对象已经存在。查询不得把“探测到第 `N` 个文件”解释为“尾部已读完”。
 
-- **唯一原子点 = CURRENT 的 CAS 提交。** 一旦成功,`seq ≤ wal_applied_seq` 的 WAL 逻辑
-  上已死(数据已在 DBC1 且被 committed manifest 引用),**正确性不再依赖它们存在**。
-- **删 WAL = 提交之后独立的、幂等的 GC**,可失败可重来:删晚 = 白占存储;提交后 crash
-  没删成 = 孤儿,下轮 GC 收掉;重复删 = no-op。
-- **强制顺序:先提交,后删。** 绝不能在数据进 DBC1 + 被 committed manifest 引用之前删
-  WAL,否则 crash = 丢数据。
-- **GC 只删 `seq ≤ 当前 committed wal_applied_seq` 的 WAL** → 保证任何读者都不会需要一个
-  已删的 WAL。
+`N` 是**每个 namespace 在查询节点上的性能参数**，有配置的初值、最小值和最大值。实现可根据最近的命中数、是否用尽扫描额度、首个 404 的位置、WAL 字节数及查询延迟，用带滞后的规则调整它：反复用尽额度时增大，长期很早遇到 404 或成本超预算时减小。该参数无需写入 `CURRENT`，节点重启后可从初值重新学习。它只影响探测段；即使必读段长度超过预算，严格查询也不得静默截断。系统可以对过长的必读段触发同步索引、排队或显式失败，以控制查询延迟。
 
-**在途读者竞态**:读者持旧 manifest(`wal_applied_seq=A`)要重放 `A+1`,而 GC 依据新
-manifest(`B>A`)已删 `A+1..B` → 读者 GET 404。两种解法(可组合):
-- **读者重放遇 404 → 重读 CURRENT**(已推进,数据在 DBC1 里),用新 manifest 重试,自愈;
-- GC 留 **grace period / tail buffer**,只删远落后于当前水位的 WAL(= Iceberg expire-snapshot)。
+查询固定旧快照时，后台可能已经索引并回收其中所需的 WAL。遇到这种情况，查询重读 `CURRENT` 并从新 manifest 重试。GC 还应提供足够的保留期，照顾在途查询；不支持无限期持有旧快照而同时删除其 WAL。
 
-> 这是 Iceberg / Delta / SlateDB 的通用套路:**把两阶段原子难题,降成"一次 CAS 提交
-> (权威)+ 幂等 GC(可失败、可重来、由 manifest 推导出可删集合)"。** data 文件的孤儿
-> (§4 CAS 失败者产出的)同样走这个 GC。
+## 8. 后台索引：WAL → manifest + data
 
----
+后台任务从当前 `C+1` 开始依次读取 WAL，直到第一个不存在的序号或本轮资源上限。它验证每个对象，跳过 fencing 标记，将有效 Append 数据整理为 DBC1 文件，并把已处理批次 ID 写入持久化去重索引。即使这些 WAL 的序号大于 `P`，后台也必须发现并处理它们；这是 `Deferred` 写入的可见性兜底。
 
-## 6. `IStorage` 需要新增的原语(CAS)
+输出 DBC1、批次去重索引与新 manifest 持久化完成后，后台读取最新 `CURRENT`，用 CAS 原子发布新 manifest，并将 `C` 推进到本轮连续处理的末尾 `T`，同时设置 `P = max(P, T)`。**这次 CAS 成功就是延迟写入稳定可见的节点**：`≤ T` 的数据已有 data 文件和 manifest 支撑，严格查询从此必须能看到它们，无需等待后续列式 compaction。若 `CURRENT` 被 writer 或另一后台任务推进，重新验证输入范围与 manifest 基础，必要时重建输出再试；不能用旧快照盲目覆盖更晚的状态。
 
-现有接口(见 [`StorageAbstraction.md`](StorageAbstraction.md) §Layer A)只有
-`OpenInput / OpenOutput / Exists / List / Delete`,**没有条件写和读回 tag 的能力**。
-补上一个最小 CAS 面(沿用仓库错误约定:`bool` + out-pointer 表示预期失败;
-硬 IO 错误 `throw std::runtime_error`):
+## 9. 列式 compaction：data → data
 
-```cpp
-namespace dbplay {
+索引发布后的数据已稳定可见。列式 compaction 可独立合并小 DBC1 文件，仍采用“写不可变输出、写 manifest、CAS 切换 `CURRENT`”的流程。它不改变 `C` 或 `P`，只改变相同逻辑数据的物理布局；不能承担延迟 WAL 的首次发布职责。后台任务可以通过 `CURRENT` CAS 或独立租约减少重复工作，但租约不能代替发布时的 CAS 校验。
 
-// 对象存储的版本标识:S3 ETag / GCS generation / Azure ETag 的不透明封装。
-// 空 tag 约定为"对象不存在"。
-using StorageTag = std::string;
+## 10. 故障、GC 与一致性边界
 
-class IStorage {  // 在现有接口上追加以下方法
- public:
-  // ... 现有:OpenInput / OpenOutput / Exists / List / Delete ...
+| 事件 | 处理规则 |
+|---|---|
+| WAL PUT 成功但回复丢失 | 读取目标槽位并核对操作 ID、epoch 和校验；确认相同内容后视为已持久化。 |
+| WAL PUT 失败且槽位不存在 | 重试同一序号；不得跳号。 |
+| WAL 写完但 writer 在发布前退出 | 新 writer 与后台任务按序号发现该 WAL；立即可见请求只有确认 `P` 已推进后才能报告成功。 |
+| 两个 writer 竞争同一序号 | 条件创建只允许一个成功；输者读取已存在对象，按 fencing 规则继续或停止。 |
+| 列式文件写完但 `CURRENT` CAS 失败 | 文件与 manifest 暂时不可见；后台基于新 `CURRENT` 重算或安全重试，遗留对象由 GC 处理。 |
+| `CURRENT` 已发布但 WAL 读不到 | 严格查询重读 `CURRENT` 并重试；若仍缺失，则报告存储或协议错误。 |
 
-  // 一把读回内容 + 版本 tag(供后续 CAS)。false = 对象不存在(*out/*tag 不动)。
-  // 用于 GET CURRENT / GET manifest。硬 IO 错误抛异常。
-  virtual bool GetWithTag(const std::string &path,
-                          std::string *out, StorageTag *tag) const = 0;
+只有在新 manifest 已经通过 `CURRENT` 发布、且在途读者保留策略允许时，GC 才能删除 `seq ≤ C` 的 WAL。GC 不能删除 `seq > C` 的未索引 WAL，即使其序号没有出现在 `CURRENT` 中。删除后序号永不复用。孤儿列式文件和旧 manifest 可在确认不被任何受支持的快照引用后清理。LIST 可用于后台 GC 和审计，不参与普通写入、查询或后台索引的连续 WAL 发现。
 
-  // 条件写:仅当对象当前 tag == expected_tag 时覆盖写。
-  //   expected_tag 为空  → 语义为"仅当对象不存在时创建"(PutIfAbsent)。
-  // 成功:写入并把新 tag 回填 *new_tag,返回 true。
-  // 失败(tag 不匹配 / 对象已存在):返回 false,不写。硬 IO 错误抛异常。
-  // 映射:S3 If-Match/If-None-Match、GCS x-goog-if-generation-match、Azure If-Match。
-  virtual bool PutIfMatch(const std::string &path, const Slice &data,
-                          const StorageTag &expected_tag,
-                          StorageTag *new_tag) = 0;
-};
+严格读的原子边界是一次 `CURRENT` 快照。尽力探测段允许看到快照之后完整写入的 WAL，因此不提供同一时刻的事务快照承诺；对需要固定版本的调用方应关闭探测。两个水位、manifest 与批次去重索引必须一起验证，以避免重复行或丢行。
 
-}  // namespace dbplay
-```
+## 11. 存储接口与实现分层
 
-实现要点:
-- **S3Storage**:`PutObject` 带 `If-Match`(覆盖)或 `If-None-Match: *`(创建);
-  412 Precondition Failed → 返回 false。`GetWithTag` 读 `ETag` 头。
-- **LocalStorage / MemStorage**:进程内 `mutex` + 每路径一个版本号模拟 CAS,供单测。
-  这样 §4 的并发提交逻辑在本地就能测(两个线程抢 CAS,验证只有一个成功)。
+`IMetadataStore` 提供 `CURRENT` 的版本化读取、条件创建与 CAS。WAL 文件需要独立的**不可覆盖创建**接口，不能复用会截断同名对象的 `IStorage::OpenOutput()`。该接口应一次性写入完整对象，返回“已创建／已存在／结果待确认”；调用方可再读取对象以解决结果不明。S3 实现映射为条件 PUT，本地和内存实现也必须对同一路径原子排他。普通 `OpenOutput()` 仍可用于唯一命名的 DBC1 输出。
 
-其余 append-only 写(WAL、data、manifest)用现有 `OpenOutput` 或
-`PutIfMatch(path, data, /*expected=*/"" , ...)`(即 PutIfAbsent)即可,不需要新接口。
+- writer 负责 epoch、fencing、连续序号、WAL 持久化和可选的 `P` 发布。
+- snapshot loader 负责固定 `CURRENT`／manifest，生成必读段和可选探测段。
+- query source 负责按序读取 WAL、校验并与列式数据合并。
+- 后台索引负责发现未索引 WAL、生成 DBC1、维护批次去重索引、CAS 推进 `C` 和 `P`。
+- GC 只依据已经发布的压缩水位和快照保留策略回收 WAL。
 
----
+## 12. 落地顺序与验收
 
-## 7. 与现有分层如何衔接
+1. 定义 `CURRENT`、manifest、WAL 头部和写入结果的格式；实现不可覆盖的 WAL 条件创建。
+2. 实现单 writer 连续序号、启动扫描、fencing 标记、结果不明时的读回确认，以及跨索引与列式 compaction 的批次去重。
+3. 实现 `Immediate` 与 `Deferred` 写入；验证前者成功返回后严格读必见，后者不更新 `P`。
+4. 实现严格必读段和可选探测段；先使用固定 `N`，验证缺号、校验失败、并发发布及旧快照重试。
+5. 实现后台索引对 `P` 之后 WAL 的发现、DBC1 输出和 `C/P` 原子发布；再加入 `N` 的自适应控制与观测指标。
+6. 完成 S3/MinIO 端到端验证：writer 切换、条件 PUT 竞争、崩溃恢复、延迟写入最终可见和 GC 与在途查询竞争。
 
-```
-Catalog(逻辑)          ← 不再是独立服务:namespace 前缀 + CURRENT 就是"catalog"
-   │
-Table Format 层  [新]   ← 本设计:Namespace = { CURRENT, manifest, WAL, data }
-   │   Manifest 读写 + 原子提交 + WAL 重放;产出 data_files 列表给下层
-   ▼
-ITableSource / TableSource(现有)
-   │   TableSource(IFileFormat, IStorage, files) —— files 现在由 manifest 提供
-   ▼
-IFileFormat = NativeColumnarFileFormat(DBC1)(现有)
-   ▼
-IStorage(现有 + §6 的 CAS 原语)   MemStorage / LocalStorage / (新) S3Storage
-```
+关键验收不变量是：WAL 序号连续且不可覆盖；`C ≤ P`；严格查询完整覆盖 `(C, P]`；后台索引不遗漏 `P` 后的 WAL，并在 manifest + data 发布后使其稳定可见；一个批次在重试、writer 切换及索引后只生效一次。后续列式 compaction 必须保留这些语义。
 
-改动清单:
-1. **`IStorage` 加 `GetWithTag` / `PutIfMatch`**(§6),给 Mem/Local 加 CAS 模拟。
-2. **新增 `Namespace`(Table Format 层)**:封装 CURRENT/manifest 读写、提交、WAL 重放;
-   对上暴露 "打开某版本 → 得到 `TableSource`(files 来自 manifest)"。
-3. **schema 持久化进 manifest**(补 `DBC1` 现状缺口:reader 不再依赖进程内 Schema)。
-4. **文件级 stats 放 manifest**(Lance 路线),供打开时 prune。
-5.(可选,加 WAL 时)**WAL 追加 + 异步 compaction + 查询重放**。
-6. **S3Storage 实现**(现在是 stub)。
+## 参考
 
-多租户性质(达成的目标):
-- **无状态节点**:任意节点打开任意 namespace = `GET CURRENT` + `GET manifest`,不需
-  本地状态、不需中心 catalog。
-- **冷租户近零成本**:不活跃 namespace = 几个躺在 S3 上的对象。
-- **热路径零 LIST**:发现靠 CURRENT+manifest+确定性命名,LIST 仅用于 GC/恢复。
-- **原子提交**:每 namespace 一次 CAS,无跨租户锁。
-
----
-
-## 8. 建议的落地阶段(每步可测)
-
-- **M1 — CAS 原语**:`IStorage::GetWithTag/PutIfMatch` + Mem/Local 模拟;并发 CAS 单测
-  (两线程抢写 CURRENT,断言只有一个成功)。
-- **M2 — Namespace + manifest**:写 manifest / `GET CURRENT`→打开 → 产出 `TableSource`;
-  schema + 文件级 stats 入 manifest;打开时按 stats prune 掉整文件。
-- **M3 — 原子提交**:§4 的提交流程 + rebase 重试;孤儿/WAL 幂等 GC(§5.6,LIST 冷路径)。
-- **M4 —(可选)WAL + 并发写 + 强一致读**:per-writer 前缀 append(§5.5)、`merge.lock`
-  CAS 抢占 compaction、异步 compaction 抬 `wal_applied_seq`、查询重放 + 遇 404 重读
-  CURRENT(§5.6);`batch_id` 幂等;强一致塌陷阈值。
-- **M5 — S3Storage**:把 CAS 映射到 S3 If-Match/If-None-Match,端到端多租户跑通。
-
----
-
-## 9. 参考
-
-- turbopuffer 写路径 / WAL / 一致性 / S3 CAS 取代 Raft:见
-  [`ObjectStorageFormatResearch.md`](ObjectStorageFormatResearch.md) §1。
-- Lance "stats 抽出文件格式做独立索引"路线:同上 §2、§4.1。
-- 现有分层与 `IStorage` 接口:[`StorageAbstraction.md`](StorageAbstraction.md)。
-- 数据文件字节布局:[`NativeColumnarFileFormat.md`](NativeColumnarFileFormat.md)。
-- **SlateDB 派**(WAL + `writer_epoch` fencing + manifest CAS,形式化验证的单写者协议):
-  Manifest Design RFC <https://slatedb.io/rfcs/0001-manifest/>、
-  Compaction RFC(`compactor_epoch`)<https://slatedb.io/rfcs/0002-compaction/>。
-- **WarpStream 派**(diskless / leaderless Kafka on S3,"先落后排"):
-  <https://www.warpstream.com/blog/kafka-is-dead-long-live-kafka>、
-  架构 <https://docs.warpstream.com/warpstream/overview/architecture>;
-  Kafka KIP-1150 Diskless Topics 背书 <https://jack-vanlightly.com/blog/2025/10/22/a-fork-in-the-road-deciding-kafkas-diskless-future>。
+- [对象存储格式调研](ObjectStorageFormatResearch.md)
+- [存储抽象](StorageAbstraction.md)
+- [DBC1 文件格式](NativeColumnarFileFormat.md)
+- [Amazon S3 数据一致性](https://docs.aws.amazon.com/AmazonS3/latest/userguide/Welcome.html#ConsistencyModel)
+- [Amazon S3 条件写](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html)
+- [SlateDB Manifest Design：writer epoch 与 WAL fencing](https://slatedb.io/rfcs/0001-manifest/)

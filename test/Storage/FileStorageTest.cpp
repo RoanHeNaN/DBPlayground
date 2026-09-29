@@ -4,6 +4,7 @@
 // medium is swappable with no change to the caller.
 //
 
+#include <algorithm>
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -80,11 +81,19 @@ void RunStorageContract(IStorage &s) {
   ASSERT_TRUE(inb->ReadAt(0, 6, &got));
   EXPECT_EQ(got, "foobar");
 
+  // Immutable object creation must reject a second writer without replacing bytes.
+  EXPECT_EQ(s.CreateIfAbsent("dir/immutable.wal", Slice("first")), CreateFileResult::Created);
+  EXPECT_EQ(s.CreateIfAbsent("dir/immutable.wal", Slice("second")), CreateFileResult::AlreadyExists);
+  auto immutable = s.OpenInput("dir/immutable.wal");
+  ASSERT_NE(immutable, nullptr);
+  ASSERT_TRUE(immutable->ReadAt(0, 5, &got));
+  EXPECT_EQ(got, "first");
+
   // List by prefix.
   WriteFile(s, "dir/c.dat", "z");
   std::vector<std::string> listed = s.List("dir/");
-  ASSERT_EQ(listed.size(), 1u);
-  EXPECT_EQ(listed[0], "dir/c.dat");
+  ASSERT_EQ(listed.size(), 2u);
+  EXPECT_NE(std::find(listed.begin(), listed.end(), "dir/c.dat"), listed.end());
   EXPECT_GE(s.List("").size(), 3u);  // a.dat, b.dat, dir/c.dat
 
   // Delete.
