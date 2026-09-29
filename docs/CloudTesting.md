@@ -2,8 +2,7 @@
 
 How to build and test the cloud storage-compute-separation path, both the
 in-memory tests (no dependencies) and the S3 integration tests against a local
-MinIO. Design context: `docs/design/CloudImportQueryFramework.md`,
-`CloudTableLayering.md`.
+MinIO. Current protocol: `docs/design/MultiTenantObjectStore.md`.
 
 ## 1. Build
 
@@ -30,8 +29,6 @@ The cloud protocol is fully exercised on in-memory fakes (`MemStorage`,
 ```bash
 # Build + run a single suite (the friendly target builds then runs it):
 ninja -C build CloudPathTest             # end-to-end import/query/WAL indexing, in memory
-ninja -C build TableCurrentStateStoreTest    # legacy metadata protocol compatibility
-ninja -C build WalFileFormatTest         # WAL codec round-trip + corruption
 ninja -C build RowCodecTest              # row encode/decode + truncation guards
 
 # Or run an already-built executable directly:

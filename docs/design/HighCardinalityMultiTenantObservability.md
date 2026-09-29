@@ -1,5 +1,8 @@
 # High-Cardinality Multi-Tenant Observability Storage
 
+> 本文保留工作负载与架构背景；其中旧的 commit 链和 cursor 示例已过时。当前存储协议见
+> [`MultiTenantObjectStore.md`](MultiTenantObjectStore.md)。
+
 > Status: **design direction**（问题定义与架构原则，尚未实现）。
 >
 > 本文确定 DBPlayground 面向可观测场景时的核心工作负载与扩展模型，并收敛

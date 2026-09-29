@@ -7,7 +7,7 @@
 namespace dbplay {
 
 TableSnapshotLoader::TableSnapshotLoader(TableDescriptor table, std::shared_ptr<IMetadataStore> metadata,
-                                         std::shared_ptr<ICompactedDataManifestStore>, std::shared_ptr<IStorage> files)
+                                         std::shared_ptr<IStorage> files)
     : table_(std::move(table)), files_(std::move(files)), state_store_(table_, std::move(metadata)) {
   if (!files_) throw std::invalid_argument("TableSnapshotLoader: null file store");
 }
@@ -18,14 +18,13 @@ std::optional<TableSnapshot> TableSnapshotLoader::Load(size_t probe_limit) const
     if (!current) return std::nullopt;
     const auto manifest = state_store_.LoadManifest(current->state);
     TableSnapshot snapshot;
-    snapshot.sequential_wal = true;
     snapshot.current_metadata_version = current->version;
     snapshot.current_state_version = current->state.state_version;
     snapshot.writer_epoch = current->state.writer_epoch;
-    snapshot.indexed_seq = snapshot.compacted_cursor = current->state.indexed_seq;
-    snapshot.published_seq = snapshot.committed_cursor = current->state.published_seq;
-    snapshot.compacted_data_manifest_key = current->state.manifest_key;
-    for (const auto &file : manifest.data_files) snapshot.compacted_data_files.push_back(file.path);
+    snapshot.indexed_seq = current->state.indexed_seq;
+    snapshot.published_seq = current->state.published_seq;
+    snapshot.manifest_key = current->state.manifest_key;
+    for (const auto &file : manifest.data_files) snapshot.data_files.push_back(file.path);
 
     bool missing_required = false;
     uint64_t seq = current->state.indexed_seq;

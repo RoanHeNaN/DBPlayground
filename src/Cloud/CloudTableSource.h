@@ -11,12 +11,12 @@
 
 namespace dbplay {
 
-// Immutable per-query source: compacted data followed by required and optional
+// Immutable per-query source: indexed data followed by required and optional
 // speculative WAL chunks captured in one TableSnapshot.
 class CloudTableSource : public ITableSource {
  public:
-  CloudTableSource(Schema schema, TableSnapshot snapshot, std::shared_ptr<IFileFormat> compacted_data_format,
-                   std::shared_ptr<IFileFormat> wal_format, std::shared_ptr<IStorage> files);
+  CloudTableSource(Schema schema, TableSnapshot snapshot, std::shared_ptr<IFileFormat> data_format,
+                   std::shared_ptr<IStorage> files);
 
   const Schema &schema() const override { return schema_; }
   std::unique_ptr<IBatchCursor> Scan(const std::vector<int> &projection) override;
@@ -26,8 +26,7 @@ class CloudTableSource : public ITableSource {
  private:
   Schema schema_;
   TableSnapshot snapshot_;
-  std::shared_ptr<IFileFormat> compacted_data_format_;
-  std::shared_ptr<IFileFormat> wal_format_;
+  std::shared_ptr<IFileFormat> data_format_;
   std::shared_ptr<IStorage> files_;
 };
 

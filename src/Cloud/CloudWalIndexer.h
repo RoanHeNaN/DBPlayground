@@ -20,8 +20,8 @@ namespace dbplay {
 class CloudWalIndexer {
  public:
   CloudWalIndexer(TableDescriptor table, std::shared_ptr<IStorage> files, std::shared_ptr<IMetadataStore> metadata,
-                  std::shared_ptr<IFileFormat> compacted_data_format, std::shared_ptr<IFileFormat> wal_format,
-                  std::shared_ptr<IObjectKeyGenerator> keys, size_t max_publish_attempts = 4);
+                  std::shared_ptr<IFileFormat> data_format, std::shared_ptr<IObjectKeyGenerator> keys,
+                  size_t max_publish_attempts = 4);
 
   // Materialize up to one bounded pass of contiguous WAL files. The output is
   // invisible until CURRENT CAS succeeds; a concurrent writer does not block.
@@ -33,8 +33,7 @@ class CloudWalIndexer {
   TableDescriptor table_;
   std::shared_ptr<IStorage> files_;
   std::shared_ptr<IMetadataStore> metadata_;
-  std::shared_ptr<IFileFormat> compacted_data_format_;
-  std::shared_ptr<IFileFormat> wal_format_;
+  std::shared_ptr<IFileFormat> data_format_;
   std::shared_ptr<IObjectKeyGenerator> keys_;
   SequentialStateStore current_state_store_;
   size_t max_publish_attempts_;

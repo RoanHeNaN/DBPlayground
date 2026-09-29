@@ -1,12 +1,7 @@
 # Cloud Mode Object Garbage Collection
 
-> Status: **design note; not implemented**。
->
-> 本文记录 Cloud 模式下 WAL / commit / compacted-data 对象的回收设计。GC 目前完全未实现（见
-> [`CloudImportQueryFramework.md`](CloudImportQueryFramework.md) §6 与
-> [`CloudTableLayering.md`](CloudTableLayering.md) §12）。热路径遵守零 LIST 契约，GC 是可用 LIST
-> 的冷路径任务。关联：导入/查询路径见 `CloudImportQueryFramework.md`，epoch/CAS/fencing 语义见
-> `CloudTableLayering.md` 与 `src/Metadata/TableCurrentStateStore.cpp`。
+> 历史设计草案：本文基于已废弃的 commit 链和旧 CURRENT 协议，不能作为现行 GC 实现依据。
+> 当前 WAL、索引与 GC 边界见 [`MultiTenantObjectStore.md`](MultiTenantObjectStore.md)。
 
 ## 1. 两类垃圾
 

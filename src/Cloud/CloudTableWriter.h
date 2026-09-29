@@ -7,8 +7,6 @@
 #include <string>
 
 #include "Cloud/CloudTypes.h"
-#include "Cloud/IBatchCommitResolver.h"
-#include "Cloud/IObjectKeyGenerator.h"
 #include "Cloud/SequentialProtocol.h"
 #include "Metadata/IMetadataStore.h"
 #include "Storage/File/IStorage.h"
@@ -21,8 +19,7 @@ namespace dbplay {
 class CloudTableWriter {
  public:
   CloudTableWriter(TableDescriptor table, std::shared_ptr<IStorage> files, std::shared_ptr<IMetadataStore> metadata,
-                   std::shared_ptr<IFileFormat> wal_format, std::shared_ptr<IObjectKeyGenerator> keys,
-                   std::shared_ptr<IBatchCommitResolver> batches, size_t max_publish_attempts = 4);
+                   size_t max_publish_attempts = 4);
 
   CloudWriterStartResult Start();
   CloudImportResult Import(const CloudImportBatch &batch);
@@ -32,15 +29,11 @@ class CloudTableWriter {
 
  private:
   bool IsValidBatch(const CloudImportBatch &batch) const;
-  std::string ResolveWalKey(const std::string &relative_key) const;
   CloudImportResult Result(CloudImportCode code) const;
   CloudImportResult Publish(uint64_t seq, uint64_t epoch);
 
   TableDescriptor table_;
   std::shared_ptr<IStorage> files_;
-  std::shared_ptr<IFileFormat> wal_format_;
-  std::shared_ptr<IObjectKeyGenerator> keys_;
-  std::shared_ptr<IBatchCommitResolver> batches_;
   SequentialStateStore current_state_store_;
   size_t max_publish_attempts_;
   std::optional<VersionedSequentialState> current_state_;

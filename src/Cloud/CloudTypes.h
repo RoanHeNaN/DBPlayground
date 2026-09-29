@@ -7,7 +7,6 @@
 #include <vector>
 
 #include "Metadata/IMetadataStore.h"
-#include "Metadata/TableMetadataTypes.h"
 #include "Table/Chunk.h"
 #include "Table/Schema.h"
 
@@ -38,21 +37,15 @@ struct TableSnapshot {
   MetadataVersion current_metadata_version;
   uint64_t current_state_version = 0;
   uint64_t writer_epoch = 0;
-  uint64_t compacted_cursor = 0;
-  uint64_t committed_cursor = 0;
-  std::string compacted_data_manifest_key;
-  std::string latest_commit_key;
-  std::vector<std::string> compacted_data_files;
+  std::string manifest_key;
+  std::vector<std::string> data_files;
   std::vector<std::string> wal_files;
-  std::vector<CommitRecord> wal_commit_records;
   uint64_t published_seq = 0;
   uint64_t indexed_seq = 0;
   std::vector<Chunk> wal_chunks;
   size_t probed_wal_count = 0;
   bool probe_limit_reached = false;
-  bool sequential_wal = false;
-
-  // Query data is the compacted-data set through indexed_seq followed by
+  // Query data is the indexed data set through indexed_seq followed by
   // published WAL and, when requested, a bounded speculative WAL tail.
 };
 
@@ -79,7 +72,7 @@ enum class CloudImportCode {
 struct CloudImportResult {
   CloudImportCode code = CloudImportCode::InvalidRequest;
   uint64_t writer_epoch = 0;
-  uint64_t committed_cursor = 0;
+  uint64_t published_seq = 0;
   uint64_t wal_seq = 0;
 };
 
@@ -95,7 +88,7 @@ enum class CloudIndexCode { Indexed, AlreadyPublished, NothingToDo, RetryableCon
 struct CloudIndexResult {
   CloudIndexCode code = CloudIndexCode::InvalidState;
   uint64_t indexed_seq = 0;
-  uint64_t committed_cursor = 0;
+  uint64_t published_seq = 0;
 };
 
 struct WriterTarget {

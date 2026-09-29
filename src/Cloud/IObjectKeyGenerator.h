@@ -10,10 +10,8 @@ namespace dbplay {
 class IObjectKeyGenerator {
  public:
   virtual ~IObjectKeyGenerator() = default;
-  virtual std::string NewWalKey(const std::string &table_id) = 0;
-  virtual std::string NewCommitKey(const std::string &table_id) = 0;
-  virtual std::string NewCompactedDataFileKey(const std::string &table_id) = 0;
-  virtual std::string NewCompactedDataManifestKey(const std::string &table_id) = 0;
+  virtual std::string NewDataFileKey(const std::string &table_id) = 0;
+  virtual std::string NewManifestKey(const std::string &table_id) = 0;
 };
 
 }  // namespace dbplay

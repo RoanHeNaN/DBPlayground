@@ -13,19 +13,12 @@
 namespace dbplay {
 
 CloudTableWriter::CloudTableWriter(TableDescriptor table, std::shared_ptr<IStorage> files,
-                                   std::shared_ptr<IMetadataStore> metadata, std::shared_ptr<IFileFormat> wal_format,
-                                   std::shared_ptr<IObjectKeyGenerator> keys,
-                                   std::shared_ptr<IBatchCommitResolver> batches, size_t max_publish_attempts)
+                                   std::shared_ptr<IMetadataStore> metadata, size_t max_publish_attempts)
     : table_(std::move(table)),
       files_(std::move(files)),
-      wal_format_(std::move(wal_format)),
-      keys_(std::move(keys)),
-      batches_(std::move(batches)),
       current_state_store_(table_, std::move(metadata)),
       max_publish_attempts_(max_publish_attempts) {
-  if (!files_ || !wal_format_ || !keys_ || !batches_ || max_publish_attempts_ == 0 ||
-      !SchemasEqual(table_.schema, wal_format_->schema()))
-    throw std::invalid_argument("CloudTableWriter: invalid dependency");
+  if (!files_ || max_publish_attempts_ == 0) throw std::invalid_argument("CloudTableWriter: invalid dependency");
 }
 
 CloudWriterStartResult CloudTableWriter::Start() {
@@ -233,7 +226,7 @@ CloudImportResult CloudTableWriter::Result(CloudImportCode code) const {
   result.code = code;
   if (current_state_) {
     result.writer_epoch = current_state_->state.writer_epoch;
-    result.committed_cursor = current_state_->state.published_seq;
+    result.published_seq = current_state_->state.published_seq;
   }
   return result;
 }
