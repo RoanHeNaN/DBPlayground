@@ -1,0 +1,63 @@
+.clang-format
+  s_dd0b23d50a3462::t_eecdf506542067 6
+src/Base/BoundedQueue.h
+  s_dd0b23d50a3462::t_4c6abe9be06c4e 24-26,34-36
+src/Cloud/CloudTable.cpp
+  s_dd0b23d50a3462::t_f1e00f28dfaa56 35,37,39
+src/Cloud/CloudTableSource.cpp
+  s_dd0b23d50a3462::t_fbf2e3e64e8ab5 38,40,45,47
+src/Cloud/CloudTableWriter.cpp
+  s_dd0b23d50a3462::t_9cc85f4968e996 21,23,33,35,37,39,43,45,56,58,60,62,64,66,71,73-74,76-77,79,100,102,115,117-118,120,122,124,148,150-151,153,163,165,175,177,207,209,215,217,233,235,242,244,259,261,263-264,266-269,271-272
+src/Cloud/CloudWalIndexer.cpp
+  s_dd0b23d50a3462::t_043a440c0e9ac1 23,25,32,34,42,44,47-49,56,58,62,64,67,69-72,81,83,86,88,92,94
+src/Cloud/S3/S3Client.cpp
+  s_dd0b23d50a3462::t_52817295c39049 29,31,33,35,49,51,67,69,84,86,111,113,126-128,167,169,194,196
+src/Cloud/S3/S3FileStorage.cpp
+  s_dd0b23d50a3462::t_56183204c47bc0 20,22,28,30,35,37,57,59,64,66,68,70,91,93,95,97,114,116-117,119,133,135-136,138-139,141,147,149,158,160,166-168,183,185
+src/Cloud/S3/S3MetadataStore.cpp
+  s_dd0b23d50a3462::t_1da3628ef47bdf 20,22,26,28,33,35,38,40,47,49,51,53,56,58-59,61,68,70,72,74,79,81-82,84
+src/Cloud/S3/Sigv4.cpp
+  s_dd0b23d50a3462::t_0e694bbcd2d492 93,95
+src/Cloud/SequentialProtocol.cpp
+  s_dd0b23d50a3462::t_cb8edf31797042 28-30,33-35,38,40,45,47,49-51,70,72,80-82,87-89,95,97,100-102,107,109,114,116,128,130,161,163,165,167,188-190,200-202,215,217,221-224,226,232,234,264,266,274,276,280,282,286,288,294-295,297-298,311,313-316,318,320,338,340,344,346,358,360,377,379-380,382-383,385-386,388-389,391,408,410,414-416,437,439,444,446,454,456,464,466,473,475,493,495,497,499-500,502,504,506,511,513,519,521,524,526,532,534-538,540,558,560,563,565,573,575,588,590,593,595,608,610,614,616,625,627
+src/Cloud/TableSnapshotLoader.cpp
+  s_dd0b23d50a3462::t_7094edde6015aa 12,14,20,22,31-33,46-48,51,53,57,59,63-65
+src/Io/Channel.cpp
+  s_dd0b23d50a3462::t_ebb5e5445512ff 28,30,33,35,38,40,43,45
+src/Io/Poller.cpp
+  s_dd0b23d50a3462::t_0f98dbbf4e8b33 30,32,86,88
+src/Storage/File/LocalStorage.cpp
+  s_dd0b23d50a3462::t_7dc669a22954df 104,106,111,113,116,118
+src/Storage/File/MemStorage.cpp
+  s_dd0b23d50a3462::t_7ef174b566d5f0 73,75
+src/Table/Format/NativeColumnarFileFormat.cpp
+  s_dd0b23d50a3462::t_7603d7aa8f6ed1 54-56,59-61,64-66,69-71,74-76,80-82
+src/Table/RowCodec.cpp
+  s_dd0b23d50a3462::t_6851f0c3429455 100,102,153,155,160,162,168,170,176,178,184,186,192,194,203,205
+test/Base/BaseTest.cpp
+  s_dd0b23d50a3462::t_8794adabfc6fc9 23,25,54,56
+test/Cloud/S3IntegrationTest.cpp
+  s_dd0b23d50a3462::t_c851fb099b7c06 217-219,253-255,265,267,287-289,291-293,303-305,322-324
+test/Core/CoreTest.cpp
+  s_dd0b23d50a3462::t_f879e9df1d15e8 133,135
+test/Table/NativeColumnarFastPathTest.cpp
+  s_dd0b23d50a3462::t_9c84919849146b 31,33,48,50,133-135
+test/Table/NativeColumnarReadRangeTest.cpp
+  s_dd0b23d50a3462::t_c57702cc754320 71-73,80-82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "fadc8b80f2c4d0194deac25e905adb5f87cdc360",
+  "prompts": {},
+  "sessions": {
+    "s_dd0b23d50a3462": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12e0d-4258-7200-b34d-8d962e21bcff",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "zhiqiang-hhhh <seuhezhiqiang@163.com>"
+    }
+  }
+}
