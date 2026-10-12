@@ -51,23 +51,35 @@ void AppendRange(Column *dst, const Column &src, size_t start, size_t count) {
   const size_t end = start + count;
   switch (dst->type()) {
     case Type::Int32:
-      for (size_t i = start; i < end; ++i) dst->Append<int32_t>(src.Get<int32_t>(i));
+      for (size_t i = start; i < end; ++i) {
+        dst->Append<int32_t>(src.Get<int32_t>(i));
+      }
       break;
     case Type::Int64:
-      for (size_t i = start; i < end; ++i) dst->Append<int64_t>(src.Get<int64_t>(i));
+      for (size_t i = start; i < end; ++i) {
+        dst->Append<int64_t>(src.Get<int64_t>(i));
+      }
       break;
     case Type::Float:
-      for (size_t i = start; i < end; ++i) dst->Append<float>(src.Get<float>(i));
+      for (size_t i = start; i < end; ++i) {
+        dst->Append<float>(src.Get<float>(i));
+      }
       break;
     case Type::Double:
-      for (size_t i = start; i < end; ++i) dst->Append<double>(src.Get<double>(i));
+      for (size_t i = start; i < end; ++i) {
+        dst->Append<double>(src.Get<double>(i));
+      }
       break;
     case Type::Bool:
-      for (size_t i = start; i < end; ++i) dst->Append<bool>(src.Get<bool>(i));
+      for (size_t i = start; i < end; ++i) {
+        dst->Append<bool>(src.Get<bool>(i));
+      }
       break;
     case Type::String:
     case Type::Blob:
-      for (size_t i = start; i < end; ++i) dst->AppendBytes(src.GetBytes(i));
+      for (size_t i = start; i < end; ++i) {
+        dst->AppendBytes(src.GetBytes(i));
+      }
       break;
     default:
       throw std::invalid_argument("NativeColumnar: invalid column type");

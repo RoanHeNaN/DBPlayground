@@ -3,6 +3,7 @@ DerivePointerAlignment: false
 PointerAlignment: Right
 ColumnLimit: 120
 AllowShortIfStatementsOnASingleLine: Never
+InsertBraces: true
 
 # Default for clang-8, changed in later clangs. Set explicitly for forwards
 # compatibility for students with modern clangs

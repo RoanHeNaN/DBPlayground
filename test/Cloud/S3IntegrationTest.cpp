@@ -214,7 +214,9 @@ TEST_F(S3IntegrationTest, ConcurrentWritersAndStrictReaderOnMinIO) {
 
   std::thread reader([&] {
     ++ready;
-    while (!go.load()) std::this_thread::yield();
+    while (!go.load()) {
+      std::this_thread::yield();
+    }
     std::set<int64_t> previously_visible;
     try {
       while (!stop_reader.load()) {
@@ -248,7 +250,9 @@ TEST_F(S3IntegrationTest, ConcurrentWritersAndStrictReaderOnMinIO) {
   for (int i = 0; i < kWriters; ++i) {
     writers.emplace_back([&, i] {
       ++ready;
-      while (!go.load()) std::this_thread::yield();
+      while (!go.load()) {
+        std::this_thread::yield();
+      }
       try {
         CloudImportBatch batch;
         batch.batch_ids = {"concurrent-client-" + std::to_string(i)};
@@ -258,8 +262,9 @@ TEST_F(S3IntegrationTest, ConcurrentWritersAndStrictReaderOnMinIO) {
           const auto start = writer->Start();
           if (start.code == CloudWriterStartCode::Started) {
             const auto result = writer->Import(batch);
-            if (result.code == CloudImportCode::Committed || result.code == CloudImportCode::AlreadyCommitted)
+            if (result.code == CloudImportCode::Committed || result.code == CloudImportCode::AlreadyCommitted) {
               return;
+            }
             if (result.code != CloudImportCode::Fenced && result.code != CloudImportCode::RetryableConflict) {
               fail("writer " + std::to_string(i) + " returned unexpected import result " +
                    std::to_string(static_cast<int>(result.code)));
@@ -279,9 +284,13 @@ TEST_F(S3IntegrationTest, ConcurrentWritersAndStrictReaderOnMinIO) {
     });
   }
 
-  while (ready.load() != kWriters + 1) std::this_thread::yield();
+  while (ready.load() != kWriters + 1) {
+    std::this_thread::yield();
+  }
   go = true;
-  for (auto &writer : writers) writer.join();
+  for (auto &writer : writers) {
+    writer.join();
+  }
   stop_reader = true;
   reader.join();
   ASSERT_TRUE(errors.empty()) << (errors.empty() ? "" : errors.front());
@@ -291,7 +300,9 @@ TEST_F(S3IntegrationTest, ConcurrentWritersAndStrictReaderOnMinIO) {
   ASSERT_NE(strict, nullptr);
   auto rows = CollectProjected(*strict, {0});
   std::set<int64_t> ids;
-  for (const auto &row : rows) ids.insert(row[0].AsInt64());
+  for (const auto &row : rows) {
+    ids.insert(row[0].AsInt64());
+  }
   EXPECT_EQ(rows.size(), kWriters);
   EXPECT_EQ(ids, (std::set<int64_t>{1000, 1001, 1002, 1003}));
 
@@ -308,7 +319,9 @@ TEST_F(S3IntegrationTest, ConcurrentWritersAndStrictReaderOnMinIO) {
   ASSERT_NE(strict, nullptr);
   rows = CollectProjected(*strict, {0});
   ids.clear();
-  for (const auto &row : rows) ids.insert(row[0].AsInt64());
+  for (const auto &row : rows) {
+    ids.insert(row[0].AsInt64());
+  }
   EXPECT_EQ(rows.size(), kWriters);
   EXPECT_EQ(ids, (std::set<int64_t>{1000, 1001, 1002, 1003}));
 }

@@ -68,14 +68,18 @@ TEST(NativeColumnarReadRangeTest, ReadRangeSubrangesMatchWhole) {
   ASSERT_TRUE(reader->ReadRange(0, kN, &full));
   ASSERT_EQ(full.row_count, static_cast<size_t>(kN));
   ASSERT_EQ(full.column_ids, (std::vector<int>{0, 2}));
-  for (int64_t i = 0; i < kN; ++i) check_cell(full, i, i);
+  for (int64_t i = 0; i < kN; ++i) {
+    check_cell(full, i, i);
+  }
 
   int64_t expected = 0;
   for (const std::pair<uint64_t, uint64_t> &win : {std::pair<uint64_t, uint64_t>{0, 30}, {30, 25}, {55, 45}}) {
     Chunk c;
     ASSERT_TRUE(reader->ReadRange(win.first, win.second, &c));
     EXPECT_EQ(c.row_count, win.second);
-    for (size_t r = 0; r < c.row_count; ++r) check_cell(c, r, expected++);
+    for (size_t r = 0; r < c.row_count; ++r) {
+      check_cell(c, r, expected++);
+    }
   }
   EXPECT_EQ(expected, kN);
 

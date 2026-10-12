@@ -25,20 +25,24 @@ void Channel::Remove() { loop_->RemoveChannel(this); }
 void Channel::HandleEvent() {
   // Peer hung up with no more data to read: treat as close.
   if ((revents_ & POLLHUP) && !(revents_ & POLLIN)) {
-    if (close_callback_)
+    if (close_callback_) {
       close_callback_();
+    }
   }
   if (revents_ & (POLLERR | POLLNVAL)) {
-    if (error_callback_)
+    if (error_callback_) {
       error_callback_();
+    }
   }
   if (revents_ & (POLLIN | POLLPRI)) {
-    if (read_callback_)
+    if (read_callback_) {
       read_callback_();
+    }
   }
   if (revents_ & POLLOUT) {
-    if (write_callback_)
+    if (write_callback_) {
       write_callback_();
+    }
   }
 }
 

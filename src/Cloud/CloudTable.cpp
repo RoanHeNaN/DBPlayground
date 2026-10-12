@@ -32,10 +32,11 @@ std::optional<TableSnapshot> CloudTable::LoadSnapshot(bool probe_unpublished) co
   const size_t limit = probe_unpublished ? probe_limit_.load() : 0;
   auto snapshot = loader.Load(limit);
   if (probe_unpublished && snapshot) {
-    if (snapshot->probe_limit_reached && limit < probe_policy_.maximum)
+    if (snapshot->probe_limit_reached && limit < probe_policy_.maximum) {
       probe_limit_.store(limit > probe_policy_.maximum / 2 ? probe_policy_.maximum : limit * 2);
-    else if (snapshot->probed_wal_count < limit / 4 && limit > probe_policy_.minimum)
+    } else if (snapshot->probed_wal_count < limit / 4 && limit > probe_policy_.minimum) {
       probe_limit_.store(std::max(probe_policy_.minimum, limit / 2));
+    }
   }
   return snapshot;
 }

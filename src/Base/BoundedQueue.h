@@ -21,7 +21,9 @@ class BoundedQueue {
 
   bool PushBack(const T &element) {
     std::unique_lock<std::mutex> queue_lock(queue_mutex_);
-    while (queue_.size() >= capacity_) queue_condition_.wait(queue_lock);
+    while (queue_.size() >= capacity_) {
+      queue_condition_.wait(queue_lock);
+    }
     queue_.emplace_back(element);
     queue_condition_.notify_one();
     return true;
@@ -29,7 +31,9 @@ class BoundedQueue {
 
   bool Pop(T &element_ret) {
     std::unique_lock<std::mutex> queue_lock(queue_mutex_);
-    while (queue_.empty()) queue_condition_.wait(queue_lock);
+    while (queue_.empty()) {
+      queue_condition_.wait(queue_lock);
+    }
 
     queue_.pop_back();
     queue_condition_.notify_one();

@@ -90,8 +90,9 @@ std::string BuildAuthorization(const SigningInput &in) {
   std::sort(encoded.begin(), encoded.end());
   std::string canonical_query;
   for (size_t i = 0; i < encoded.size(); ++i) {
-    if (i != 0)
+    if (i != 0) {
       canonical_query.push_back('&');
+    }
     canonical_query += encoded[i].first;
     canonical_query.push_back('=');
     canonical_query += encoded[i].second;

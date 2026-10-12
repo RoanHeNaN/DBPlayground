@@ -26,11 +26,13 @@ void EnsureCurlGlobalInit() {
 std::string HostFromEndpoint(const std::string &endpoint) {
   std::string s = endpoint;
   const auto scheme = s.find("://");
-  if (scheme != std::string::npos)
+  if (scheme != std::string::npos) {
     s = s.substr(scheme + 3);
+  }
   const auto slash = s.find('/');
-  if (slash != std::string::npos)
+  if (slash != std::string::npos) {
     s = s.substr(0, slash);
+  }
   return s;
 }
 
@@ -44,8 +46,9 @@ std::string TrimHeaderValue(const char *p, size_t n) {
   std::string value(p, n);
   const size_t begin = value.find_first_not_of(" \t");
   const size_t end = value.find_last_not_of(" \t\r\n");
-  if (begin == std::string::npos || end == std::string::npos)
+  if (begin == std::string::npos || end == std::string::npos) {
     return {};
+  }
   return value.substr(begin, end - begin + 1);
 }
 
@@ -61,8 +64,9 @@ size_t CaptureHeaders(char *buffer, size_t size, size_t nitems, void *userdata) 
     resp->etag = value;
   } else if (len >= 15 && strncasecmp(buffer, "content-length:", 15) == 0) {
     const std::string value = TrimHeaderValue(buffer + 15, len - 15);
-    if (!value.empty())
+    if (!value.empty()) {
       resp->content_length = std::strtoll(value.c_str(), nullptr, 10);
+    }
   }
   return len;
 }
@@ -77,8 +81,9 @@ S3Response S3Client::Do(const std::string &method, const std::string &key,
                         const std::vector<std::pair<std::string, std::string>> &query, const Slice *body,
                         const std::vector<std::string> &extra_headers, bool head_only) {
   CURL *curl = curl_easy_init();
-  if (curl == nullptr)
+  if (curl == nullptr) {
     throw std::runtime_error("S3Client: curl_easy_init failed");
+  }
 
   const std::string canonical_uri = "/" + key;
   const std::string payload = body != nullptr ? std::string(body->data(), body->size()) : std::string();
@@ -103,8 +108,9 @@ S3Response S3Client::Do(const std::string &method, const std::string &key,
   if (!query.empty()) {
     std::string qs;
     for (size_t i = 0; i < query.size(); ++i) {
-      if (i != 0)
+      if (i != 0) {
         qs.push_back('&');
+      }
       qs += UriEncode(query[i].first, true) + "=" + UriEncode(query[i].second, true);
     }
     url += "?" + qs;
@@ -117,7 +123,9 @@ S3Response S3Client::Do(const std::string &method, const std::string &key,
   headers = curl_slist_append(headers, ("Authorization: " + authorization).c_str());
   // Suppress the default "Expect: 100-continue" and "Content-Type" curl adds.
   headers = curl_slist_append(headers, "Expect:");
-  for (const auto &h : extra_headers) headers = curl_slist_append(headers, h.c_str());
+  for (const auto &h : extra_headers) {
+    headers = curl_slist_append(headers, h.c_str());
+  }
   curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 
   if (method == "PUT") {
@@ -156,8 +164,9 @@ S3Response S3Client::Do(const std::string &method, const std::string &key,
 S3Response S3Client::Get(const std::string &key) { return Do("GET", key, {}, nullptr, {}); }
 
 S3Response S3Client::GetRange(const std::string &key, uint64_t offset, uint64_t length) {
-  if (length == 0)
+  if (length == 0) {
     return Do("GET", key, {}, nullptr, {});
+  }
   const std::string range = "Range: bytes=" + std::to_string(offset) + "-" + std::to_string(offset + length - 1);
   return Do("GET", key, {}, nullptr, {range});
 }
@@ -182,8 +191,9 @@ S3Response S3Client::ListV2(const std::string &bucket, const std::string &prefix
   std::vector<std::pair<std::string, std::string>> query;
   query.emplace_back("list-type", "2");
   query.emplace_back("prefix", prefix);
-  if (!continuation_token.empty())
+  if (!continuation_token.empty()) {
     query.emplace_back("continuation-token", continuation_token);
+  }
   return Do("GET", bucket, query, nullptr, {});
 }
 

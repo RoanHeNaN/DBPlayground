@@ -20,16 +20,18 @@ CloudWalIndexer::CloudWalIndexer(TableDescriptor table, std::shared_ptr<IStorage
       current_state_store_(table_, metadata_),
       max_publish_attempts_(max_publish_attempts) {
   if (!files_ || !data_format_ || !keys_ || max_publish_attempts_ == 0 ||
-      !SchemasEqual(table_.schema, data_format_->schema()))
+      !SchemasEqual(table_.schema, data_format_->schema())) {
     throw std::invalid_argument("CloudWalIndexer: invalid dependency");
+  }
 }
 
 CloudIndexResult CloudWalIndexer::Index() {
   constexpr uint64_t kMaxWalPerPass = 256;
   for (size_t attempt = 0; attempt < max_publish_attempts_; ++attempt) {
     auto current = current_state_store_.Load();
-    if (!current)
+    if (!current) {
       return Result(CloudIndexCode::NothingToDo, {});
+    }
     auto manifest = current_state_store_.LoadManifest(current->state);
     auto entries = current_state_store_.LoadBatchIndex(manifest);
     std::vector<Chunk> chunks;
@@ -37,29 +39,37 @@ CloudIndexResult CloudWalIndexer::Index() {
     uint64_t end = current->state.indexed_seq;
     while (end < UINT64_MAX && end - current->state.indexed_seq < kMaxWalPerPass) {
       auto wal = LoadSequentialWal(*files_, table_, end + 1);
-      if (!wal)
+      if (!wal) {
         break;
+      }
       ++end;
       if (wal->kind == SequentialWal::Kind::Append) {
-        for (const auto &id : wal->batch_ids) entries.push_back({id, wal->seq, wal->operation_id, wal->payload_digest});
+        for (const auto &id : wal->batch_ids) {
+          entries.push_back({id, wal->seq, wal->operation_id, wal->payload_digest});
+        }
         for (auto &chunk : wal->chunks) {
           rows += chunk.row_count;
           chunks.push_back(std::move(chunk));
         }
       }
     }
-    if (end == current->state.indexed_seq)
+    if (end == current->state.indexed_seq) {
       return Result(CloudIndexCode::NothingToDo, current->state);
+    }
 
     if (!chunks.empty()) {
       const std::string key = keys_->NewDataFileKey(table_.table_id);
-      if (key.compare(0, 5, "data/") != 0)
+      if (key.compare(0, 5, "data/") != 0) {
         return Result(CloudIndexCode::InvalidState, current->state);
+      }
       const std::string path = table_.file_prefix + "/" + key;
       auto writer = data_format_->OpenWriter(*files_, path);
-      if (!writer)
+      if (!writer) {
         throw std::runtime_error("CloudWalIndexer: null writer");
-      for (const auto &chunk : chunks) writer->Write(chunk);
+      }
+      for (const auto &chunk : chunks) {
+        writer->Write(chunk);
+      }
       writer->Close();
       manifest.data_files.push_back({path, current->state.indexed_seq + 1, end, rows});
     }
@@ -68,17 +78,20 @@ CloudIndexResult CloudWalIndexer::Index() {
                               [](const auto &a, const auto &b) { return a.batch_id == b.batch_id; }),
                   entries.end());
     const std::string manifest_key = keys_->NewManifestKey(table_.table_id);
-    if (manifest_key.compare(0, 9, "manifest/") != 0)
+    if (manifest_key.compare(0, 9, "manifest/") != 0) {
       return Result(CloudIndexCode::InvalidState, current->state);
+    }
     const std::string dedup_key = "dedup/" + manifest_key.substr(9) + ".idx";
     const auto dedup_result = current_state_store_.WriteBatchIndex(dedup_key, entries);
-    if (dedup_result != ConditionalWriteResult::Applied)
+    if (dedup_result != ConditionalWriteResult::Applied) {
       continue;
+    }
     manifest.batch_index_files = {dedup_key};
     manifest.covered_through_seq = end;
     const auto manifest_result = current_state_store_.WriteManifest(manifest_key, manifest);
-    if (manifest_result != ConditionalWriteResult::Applied)
+    if (manifest_result != ConditionalWriteResult::Applied) {
       continue;
+    }
     VersionedSequentialState written;
     const auto cas = current_state_store_.Publish(*current, SequentialPublishUpdate{end, manifest_key}, &written);
     if (cas == ConditionalWriteResult::Applied) {

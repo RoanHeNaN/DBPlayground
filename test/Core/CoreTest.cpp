@@ -130,9 +130,9 @@ TEST(CoreTest, DISABLED_ConcurrentRemove) {
       key_t key = keys[iter];
       RID value;
       bool found = container->GetValue(MakeEncodedKey<int64_t>(key), value);
-      if (iter < (NUM_PER_THREAD * NUM_THREADS))
+      if (iter < (NUM_PER_THREAD * NUM_THREADS)) {
         EXPECT_EQ(found, false);
-      else {
+      } else {
         EXPECT_EQ(found, true);
         EXPECT_EQ(RidOf(key), value);
       }

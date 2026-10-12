@@ -35,14 +35,16 @@ class SnapshotWalCursor : public IBatchCursor {
       : chunks_(std::move(chunks)), projection_(std::move(projection)) {}
 
   bool Next(Chunk *out) override {
-    if (pos_ == chunks_.size())
+    if (pos_ == chunks_.size()) {
       return false;
+    }
     const Chunk &src = chunks_[pos_++];
     out->column_ids = projection_;
     out->columns.clear();
     for (int column : projection_) {
-      if (column < 0 || static_cast<size_t>(column) >= src.columns.size())
+      if (column < 0 || static_cast<size_t>(column) >= src.columns.size()) {
         throw std::out_of_range("CloudTableSource: invalid projection");
+      }
       out->columns.push_back(src.columns[column]);
     }
     out->row_count = src.row_count;

@@ -18,8 +18,9 @@ CloudTableWriter::CloudTableWriter(TableDescriptor table, std::shared_ptr<IStora
       files_(std::move(files)),
       current_state_store_(table_, std::move(metadata)),
       max_publish_attempts_(max_publish_attempts) {
-  if (!files_ || max_publish_attempts_ == 0)
+  if (!files_ || max_publish_attempts_ == 0) {
     throw std::invalid_argument("CloudTableWriter: invalid dependency");
+  }
 }
 
 CloudWriterStartResult CloudTableWriter::Start() {
@@ -29,16 +30,19 @@ CloudWriterStartResult CloudTableWriter::Start() {
   auto state = current_state_store_.Load();
   if (!state) {
     const auto init = current_state_store_.Initialize();
-    if (init == ConditionalWriteResult::RetryableConflict)
+    if (init == ConditionalWriteResult::RetryableConflict) {
       return {CloudWriterStartCode::RetryableConflict, 0};
+    }
     state = current_state_store_.Load();
-    if (!state)
+    if (!state) {
       return {CloudWriterStartCode::RetryableConflict, 0};
+    }
   }
   bool acquired = false;
   for (size_t attempt = 0; attempt < max_publish_attempts_; ++attempt) {
-    if (state->state.writer_epoch == UINT64_MAX)
+    if (state->state.writer_epoch == UINT64_MAX) {
       return {CloudWriterStartCode::InvalidTable, 0};
+    }
     auto next = state->state;
     ++next.writer_epoch;
     ++next.state_version;
@@ -49,24 +53,30 @@ CloudWriterStartResult CloudTableWriter::Start() {
       acquired = true;
       break;
     }
-    if (result == ConditionalWriteResult::RetryableConflict)
+    if (result == ConditionalWriteResult::RetryableConflict) {
       return {CloudWriterStartCode::RetryableConflict, 0};
+    }
     state = current_state_store_.Load();
-    if (!state)
+    if (!state) {
       return {CloudWriterStartCode::RetryableConflict, 0};
+    }
   }
-  if (!acquired)
+  if (!acquired) {
     return {CloudWriterStartCode::Contended, 0};
+  }
 
   uint64_t seq = state->state.indexed_seq + 1;
   for (;;) {
     const auto latest = current_state_store_.Load();
-    if (!latest)
+    if (!latest) {
       return {CloudWriterStartCode::RetryableConflict, 0};
-    if (latest->state.writer_epoch != state->state.writer_epoch)
+    }
+    if (latest->state.writer_epoch != state->state.writer_epoch) {
       return {CloudWriterStartCode::Contended, 0};
-    if (seq <= latest->state.indexed_seq)
+    }
+    if (seq <= latest->state.indexed_seq) {
       seq = latest->state.indexed_seq + 1;
+    }
     auto existing = LoadSequentialWal(*files_, table_, seq);
     if (existing) {
       ++seq;
@@ -87,8 +97,9 @@ CloudWriterStartResult CloudTableWriter::Start() {
     if (result == CreateFileResult::RetryableConflict) {
       auto landed = LoadSequentialWal(*files_, table_, seq);
       if (!landed || landed->kind != SequentialWal::Kind::Fence || landed->writer_epoch != fence.writer_epoch ||
-          landed->operation_id != fence.operation_id)
+          landed->operation_id != fence.operation_id) {
         return {CloudWriterStartCode::RetryableConflict, 0};
+      }
     }
     current_state_ = current_state_store_.Load();
     if (!current_state_ || current_state_->state.writer_epoch != fence.writer_epoch) {
@@ -101,13 +112,16 @@ CloudWriterStartResult CloudTableWriter::Start() {
 }
 
 CloudImportResult CloudTableWriter::Import(const CloudImportBatch &batch) {
-  if (!current_state_)
+  if (!current_state_) {
     return Result(CloudImportCode::NotStarted);
-  if (!IsValidBatch(batch))
+  }
+  if (!IsValidBatch(batch)) {
     return Result(CloudImportCode::InvalidRequest);
+  }
   auto latest = current_state_store_.Load();
-  if (!latest)
+  if (!latest) {
     return Result(CloudImportCode::RetryableConflict);
+  }
   if (latest->state.writer_epoch != current_state_->state.writer_epoch) {
     current_state_.reset();
     return Result(CloudImportCode::Fenced);
@@ -131,10 +145,12 @@ CloudImportResult CloudTableWriter::Import(const CloudImportBatch &batch) {
   uint64_t scan_seq = latest->state.indexed_seq + 1;
   while (scan_seq < next_seq_) {
     auto wal = LoadSequentialWal(*files_, table_, scan_seq);
-    if (!wal)
+    if (!wal) {
       return Result(CloudImportCode::RetryableConflict);
-    for (const auto &id : wal->batch_ids)
+    }
+    for (const auto &id : wal->batch_ids) {
       known.emplace(id, SequentialBatchEntry{id, scan_seq, wal->operation_id, wal->payload_digest});
+    }
     ++scan_seq;
   }
   size_t already = 0;
@@ -144,8 +160,9 @@ CloudImportResult CloudTableWriter::Import(const CloudImportBatch &batch) {
     if (it != known.end()) {
       ++already;
       if (it->second.operation_id != requested.operation_id || it->second.payload_digest != request_digest ||
-          (prior_seq != 0 && prior_seq != it->second.seq))
+          (prior_seq != 0 && prior_seq != it->second.seq)) {
         return Result(CloudImportCode::InvalidRequest);
+      }
       prior_seq = it->second.seq;
     }
   }
@@ -155,8 +172,9 @@ CloudImportResult CloudTableWriter::Import(const CloudImportBatch &batch) {
       result.wal_seq = prior_seq;
       return result;
     }
-    if (batch.visibility == CloudImportBatch::Visibility::Immediate)
+    if (batch.visibility == CloudImportBatch::Visibility::Immediate) {
       return Publish(prior_seq, latest->state.writer_epoch);
+    }
     auto result = Result(CloudImportCode::Durable);
     result.wal_seq = prior_seq;
     return result;
@@ -186,15 +204,17 @@ CloudImportResult CloudTableWriter::Import(const CloudImportBatch &batch) {
   const auto create = files_->CreateIfAbsent(path, Slice(bytes));
   if (create != CreateFileResult::Created) {
     auto landed = LoadSequentialWal(*files_, table_, wal.seq);
-    if (!landed)
+    if (!landed) {
       return Result(CloudImportCode::RetryableConflict);
+    }
     if (landed->writer_epoch != wal.writer_epoch) {
       current_state_.reset();
       return Result(CloudImportCode::Fenced);
     }
     if (landed->kind != SequentialWal::Kind::Append || landed->operation_id != wal.operation_id ||
-        EncodeSequentialWal(*landed, table_.schema) != bytes)
+        EncodeSequentialWal(*landed, table_.schema) != bytes) {
       return Result(CloudImportCode::RetryableConflict);
+    }
   }
   ++next_seq_;
   if (batch.visibility == CloudImportBatch::Visibility::Deferred) {
@@ -210,16 +230,18 @@ CloudImportResult CloudTableWriter::Publish(uint64_t seq, uint64_t epoch) {
   result.wal_seq = seq;
   for (size_t attempt = 0; attempt < max_publish_attempts_; ++attempt) {
     auto latest = current_state_store_.Load();
-    if (!latest)
+    if (!latest) {
       break;
+    }
     if (latest->state.published_seq >= seq) {
       current_state_ = *latest;
       result = Result(CloudImportCode::Committed);
       result.wal_seq = seq;
       return result;
     }
-    if (latest->state.writer_epoch != epoch)
+    if (latest->state.writer_epoch != epoch) {
       break;
+    }
     VersionedSequentialState written;
     const auto cas = current_state_store_.Publish(*latest, SequentialPublishUpdate{seq, std::nullopt}, &written);
     if (cas == ConditionalWriteResult::Applied) {
@@ -234,15 +256,20 @@ CloudImportResult CloudTableWriter::Publish(uint64_t seq, uint64_t epoch) {
 }
 
 bool CloudTableWriter::IsValidBatch(const CloudImportBatch &batch) const {
-  if (batch.batch_ids.empty() || batch.chunks.empty())
+  if (batch.batch_ids.empty() || batch.chunks.empty()) {
     return false;
+  }
   std::unordered_set<std::string> ids;
-  for (const auto &id : batch.batch_ids)
-    if (id.empty() || !ids.insert(id).second)
+  for (const auto &id : batch.batch_ids) {
+    if (id.empty() || !ids.insert(id).second) {
       return false;
-  for (const auto &chunk : batch.chunks)
-    if (!IsFullSchemaChunk(chunk, table_.schema))
+    }
+  }
+  for (const auto &chunk : batch.chunks) {
+    if (!IsFullSchemaChunk(chunk, table_.schema)) {
       return false;
+    }
+  }
   return true;
 }
 

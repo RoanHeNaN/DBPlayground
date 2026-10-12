@@ -25,22 +25,30 @@ class Writer {
   void Raw(const char *p, size_t n) { bytes_.append(p, n); }
   void U8(uint8_t n) { bytes_.push_back(static_cast<char>(n)); }
   void U32(uint32_t n) {
-    for (unsigned i = 0; i < 4; ++i) U8(static_cast<uint8_t>(n >> (8 * i)));
+    for (unsigned i = 0; i < 4; ++i) {
+      U8(static_cast<uint8_t>(n >> (8 * i)));
+    }
   }
   void U64(uint64_t n) {
-    for (unsigned i = 0; i < 8; ++i) U8(static_cast<uint8_t>(n >> (8 * i)));
+    for (unsigned i = 0; i < 8; ++i) {
+      U8(static_cast<uint8_t>(n >> (8 * i)));
+    }
   }
   void String(const std::string &s) {
-    if (s.size() > UINT32_MAX)
+    if (s.size() > UINT32_MAX) {
       throw std::invalid_argument("sequential: string too large");
+    }
     U32(static_cast<uint32_t>(s.size()));
     Raw(s.data(), s.size());
   }
   void Strings(const std::vector<std::string> &xs) {
-    if (xs.size() > UINT32_MAX)
+    if (xs.size() > UINT32_MAX) {
       throw std::invalid_argument("sequential: list too large");
+    }
     U32(static_cast<uint32_t>(xs.size()));
-    for (const auto &x : xs) String(x);
+    for (const auto &x : xs) {
+      String(x);
+    }
   }
   const std::string &bytes() const { return bytes_; }
   std::string Take() { return std::move(bytes_); }
@@ -59,8 +67,9 @@ class Reader {
     return s;
   }
   void Magic(const char *s) {
-    if (Raw(4) != std::string(s, 4))
+    if (Raw(4) != std::string(s, 4)) {
       throw std::invalid_argument("sequential: bad magic");
+    }
   }
   uint8_t U8() {
     Need(1);
@@ -68,34 +77,43 @@ class Reader {
   }
   uint32_t U32() {
     uint32_t n = 0;
-    for (unsigned i = 0; i < 4; ++i) n |= uint32_t(U8()) << (8 * i);
+    for (unsigned i = 0; i < 4; ++i) {
+      n |= uint32_t(U8()) << (8 * i);
+    }
     return n;
   }
   uint64_t U64() {
     uint64_t n = 0;
-    for (unsigned i = 0; i < 8; ++i) n |= uint64_t(U8()) << (8 * i);
+    for (unsigned i = 0; i < 8; ++i) {
+      n |= uint64_t(U8()) << (8 * i);
+    }
     return n;
   }
   std::string String() { return Raw(U32()); }
   std::vector<std::string> Strings() {
     const uint32_t count = U32();
-    if (count > Remaining() / 4)
+    if (count > Remaining() / 4) {
       throw std::invalid_argument("sequential: bad list count");
+    }
     std::vector<std::string> xs;
     xs.reserve(count);
-    for (uint32_t i = 0; i < count; ++i) xs.push_back(String());
+    for (uint32_t i = 0; i < count; ++i) {
+      xs.push_back(String());
+    }
     return xs;
   }
   size_t Remaining() const { return static_cast<size_t>(end_ - p_); }
   void End() const {
-    if (p_ != end_)
+    if (p_ != end_) {
       throw std::invalid_argument("sequential: trailing bytes");
+    }
   }
 
  private:
   void Need(size_t n) const {
-    if (n > Remaining())
+    if (n > Remaining()) {
       throw std::invalid_argument("sequential: truncated object");
+    }
   }
   const char *p_;
   const char *end_;
@@ -107,8 +125,9 @@ void Header(Writer *w, const char *magic) {
 }
 void Header(Reader *r, const char *magic) {
   r->Magic(magic);
-  if (r->U32() != 2)
+  if (r->U32() != 2) {
     throw std::invalid_argument("sequential: bad version");
+  }
 }
 uint32_t Crc(const char *p, size_t n) {
   return static_cast<uint32_t>(crc32(0L, reinterpret_cast<const Bytef *>(p), static_cast<uInt>(n)));
@@ -139,11 +158,13 @@ Value Cell(const Column &col, size_t row) {
 }
 
 std::string ReadAll(IInputFile &in) {
-  if (in.Size() > 256ULL * 1024 * 1024)
+  if (in.Size() > 256ULL * 1024 * 1024) {
     throw std::runtime_error("sequential: WAL too large");
+  }
   std::string bytes;
-  if (!in.ReadAt(0, static_cast<size_t>(in.Size()), &bytes))
+  if (!in.ReadAt(0, static_cast<size_t>(in.Size()), &bytes)) {
     throw std::runtime_error("sequential: short WAL read");
+  }
   return bytes;
 }
 
@@ -164,7 +185,9 @@ std::string SequentialManifest::DataFile::toString() const {
 std::string SequentialManifest::toString() const {
   std::vector<std::string> files;
   files.reserve(data_files.size());
-  for (const auto &file : data_files) files.push_back(file.toString());
+  for (const auto &file : data_files) {
+    files.push_back(file.toString());
+  }
   return fmt::format(
       "SequentialManifest{{table_id={}, covered_through_seq={}, schema_version={}, schema_fields={}, "
       "data_files=[{}], batch_index_files=[{}]}}",
@@ -174,7 +197,9 @@ std::string SequentialManifest::toString() const {
 
 std::string SequentialWal::toString() const {
   uint64_t row_count = 0;
-  for (const auto &chunk : chunks) row_count += chunk.row_count;
+  for (const auto &chunk : chunks) {
+    row_count += chunk.row_count;
+  }
   return fmt::format(
       "SequentialWal{{kind={}, table_id={}, seq={}, writer_epoch={}, schema_version={}, operation_id={}, "
       "batch_ids=[{}], chunk_count={}, row_count={}}}",
@@ -187,21 +212,26 @@ std::string VersionedSequentialState::toString() const {
 }
 
 std::string SequentialWalKey(const TableDescriptor &table, uint64_t seq) {
-  if (seq == 0)
+  if (seq == 0) {
     throw std::invalid_argument("sequential: WAL seq is zero");
+  }
   char name[64];
   std::snprintf(name, sizeof(name), "/wal/%020llu.wal", static_cast<unsigned long long>(seq));
   std::string prefix = table.file_prefix;
-  while (!prefix.empty() && prefix.back() == '/') prefix.pop_back();
-  if (prefix.empty())
+  while (!prefix.empty() && prefix.back() == '/') {
+    prefix.pop_back();
+  }
+  if (prefix.empty()) {
     throw std::invalid_argument("sequential: empty file prefix");
+  }
   return prefix + name;
 }
 
 std::string EncodeSequentialState(const SequentialState &s) {
   if (s.table_id.empty() || s.manifest_key.compare(0, 9, "manifest/") != 0 || s.indexed_seq > s.published_seq ||
-      s.schema_version != 1)
+      s.schema_version != 1) {
     throw std::invalid_argument("sequential: invalid CURRENT");
+  }
   Writer w;
   Header(&w, "DBS2");
   w.String(s.table_id);
@@ -231,8 +261,9 @@ SequentialState DecodeSequentialState(const Slice &bytes) {
 }
 
 std::string EncodeSequentialManifest(const SequentialManifest &m) {
-  if (m.table_id.empty() || m.schema.empty())
+  if (m.table_id.empty() || m.schema.empty()) {
     throw std::invalid_argument("sequential: invalid manifest");
+  }
   Writer w;
   Header(&w, "DBM2");
   w.String(m.table_id);
@@ -240,26 +271,31 @@ std::string EncodeSequentialManifest(const SequentialManifest &m) {
   w.U64(m.schema_version);
   w.U32(static_cast<uint32_t>(m.schema.size()));
   for (const auto &field : m.schema) {
-    if (field.name.empty() || field.type == Type::Invalid || field.type > Type::Blob)
+    if (field.name.empty() || field.type == Type::Invalid || field.type > Type::Blob) {
       throw std::invalid_argument("sequential: invalid schema field");
+    }
     w.String(field.name);
     w.U8(static_cast<uint8_t>(field.type));
   }
-  if (m.data_files.size() > UINT32_MAX)
+  if (m.data_files.size() > UINT32_MAX) {
     throw std::invalid_argument("sequential: too many data files");
+  }
   w.U32(static_cast<uint32_t>(m.data_files.size()));
   for (const auto &file : m.data_files) {
     if (file.path.empty() || file.first_seq == 0 || file.first_seq > file.last_seq ||
-        file.last_seq > m.covered_through_seq || file.row_count == 0)
+        file.last_seq > m.covered_through_seq || file.row_count == 0) {
       throw std::invalid_argument("sequential: invalid data file");
+    }
     w.String(file.path);
     w.U64(file.first_seq);
     w.U64(file.last_seq);
     w.U64(file.row_count);
   }
-  for (const auto &key : m.batch_index_files)
-    if (key.compare(0, 6, "dedup/") != 0)
+  for (const auto &key : m.batch_index_files) {
+    if (key.compare(0, 6, "dedup/") != 0) {
       throw std::invalid_argument("sequential: invalid batch index key");
+    }
+  }
   w.Strings(m.batch_index_files);
   return w.Take();
 }
@@ -272,12 +308,16 @@ SequentialManifest DecodeSequentialManifest(const Slice &bytes) {
   m.covered_through_seq = r.U64();
   m.schema_version = r.U64();
   const uint32_t n = r.U32();
-  if (n > 1024)
+  if (n > 1024) {
     throw std::invalid_argument("sequential: too many columns");
-  for (uint32_t i = 0; i < n; ++i) m.schema.push_back({r.String(), static_cast<Type>(r.U8())});
+  }
+  for (uint32_t i = 0; i < n; ++i) {
+    m.schema.push_back({r.String(), static_cast<Type>(r.U8())});
+  }
   const uint32_t file_count = r.U32();
-  if (file_count > r.Remaining() / (4 + 8 + 8 + 8))
+  if (file_count > r.Remaining() / (4 + 8 + 8 + 8)) {
     throw std::invalid_argument("sequential: bad data file count");
+  }
   for (uint32_t i = 0; i < file_count; ++i) {
     SequentialManifest::DataFile file;
     file.path = r.String();
@@ -295,13 +335,15 @@ SequentialManifest DecodeSequentialManifest(const Slice &bytes) {
 std::string EncodeSequentialBatchIndex(const std::vector<SequentialBatchEntry> &entries) {
   Writer w;
   Header(&w, "DBI2");
-  if (entries.size() > UINT32_MAX)
+  if (entries.size() > UINT32_MAX) {
     throw std::invalid_argument("sequential: batch index too large");
+  }
   w.U32(static_cast<uint32_t>(entries.size()));
   for (const auto &entry : entries) {
     if (entry.batch_id.empty() || entry.seq == 0 || entry.operation_id.empty() ||
-        entry.payload_digest.size() != SHA256_DIGEST_LENGTH)
+        entry.payload_digest.size() != SHA256_DIGEST_LENGTH) {
       throw std::invalid_argument("sequential: invalid batch index entry");
+    }
     w.String(entry.batch_id);
     w.U64(entry.seq);
     w.String(entry.operation_id);
@@ -313,8 +355,9 @@ std::vector<SequentialBatchEntry> DecodeSequentialBatchIndex(const Slice &bytes)
   Reader r(bytes);
   Header(&r, "DBI2");
   const uint32_t count = r.U32();
-  if (count > r.Remaining() / (4 + 8 + 4 + SHA256_DIGEST_LENGTH))
+  if (count > r.Remaining() / (4 + 8 + 4 + SHA256_DIGEST_LENGTH)) {
     throw std::invalid_argument("sequential: invalid batch index count");
+  }
   std::vector<SequentialBatchEntry> entries;
   entries.reserve(count);
   for (uint32_t i = 0; i < count; ++i) {
@@ -331,16 +374,21 @@ std::vector<SequentialBatchEntry> DecodeSequentialBatchIndex(const Slice &bytes)
 }
 
 std::string EncodeSequentialWal(const SequentialWal &wal, const Schema &schema) {
-  if (wal.table_id.empty() || wal.seq == 0 || wal.writer_epoch == 0 || wal.operation_id.empty())
+  if (wal.table_id.empty() || wal.seq == 0 || wal.writer_epoch == 0 || wal.operation_id.empty()) {
     throw std::invalid_argument("sequential: invalid WAL header");
-  if (wal.kind == SequentialWal::Kind::Append && (wal.batch_ids.empty() || wal.chunks.empty()))
+  }
+  if (wal.kind == SequentialWal::Kind::Append && (wal.batch_ids.empty() || wal.chunks.empty())) {
     throw std::invalid_argument("sequential: empty Append WAL");
-  if (wal.kind == SequentialWal::Kind::Fence && (!wal.batch_ids.empty() || !wal.chunks.empty()))
+  }
+  if (wal.kind == SequentialWal::Kind::Fence && (!wal.batch_ids.empty() || !wal.chunks.empty())) {
     throw std::invalid_argument("sequential: nonempty Fence WAL");
-  if (wal.kind != SequentialWal::Kind::Append && wal.kind != SequentialWal::Kind::Fence)
+  }
+  if (wal.kind != SequentialWal::Kind::Append && wal.kind != SequentialWal::Kind::Fence) {
     throw std::invalid_argument("sequential: invalid WAL kind");
-  if (wal.schema_version != 1 || wal.chunks.size() > UINT32_MAX)
+  }
+  if (wal.schema_version != 1 || wal.chunks.size() > UINT32_MAX) {
     throw std::invalid_argument("sequential: unsupported WAL schema or chunk count");
+  }
   Writer w;
   Header(&w, "DBW2");
   w.U8(static_cast<uint8_t>(wal.kind));
@@ -357,12 +405,15 @@ std::string EncodeSequentialWal(const SequentialWal &wal, const Schema &schema) 
   RowCodec codec(schema);
   uint64_t total_rows = 0;
   for (const auto &chunk : wal.chunks) {
-    if (!IsFullSchemaChunk(chunk, schema) || chunk.row_count > UINT32_MAX)
+    if (!IsFullSchemaChunk(chunk, schema) || chunk.row_count > UINT32_MAX) {
       throw std::invalid_argument("sequential: invalid WAL chunk");
+    }
     Writer payload;
     for (size_t row = 0; row < chunk.row_count; ++row) {
       std::vector<Value> values;
-      for (const auto &col : chunk.columns) values.push_back(Cell(col, row));
+      for (const auto &col : chunk.columns) {
+        values.push_back(Cell(col, row));
+      }
       payload.String(codec.Encode(values));
     }
     Writer entry;
@@ -383,14 +434,16 @@ std::string EncodeSequentialWal(const SequentialWal &wal, const Schema &schema) 
 }
 
 SequentialWal DecodeSequentialWal(const Slice &bytes, const Schema &schema) {
-  if (bytes.size() < 8)
+  if (bytes.size() < 8) {
     throw std::invalid_argument("sequential: short WAL");
+  }
   Reader r(bytes);
   Header(&r, "DBW2");
   SequentialWal wal;
   wal.kind = static_cast<SequentialWal::Kind>(r.U8());
-  if (wal.kind != SequentialWal::Kind::Append && wal.kind != SequentialWal::Kind::Fence)
+  if (wal.kind != SequentialWal::Kind::Append && wal.kind != SequentialWal::Kind::Fence) {
     throw std::invalid_argument("sequential: bad WAL kind");
+  }
   wal.table_id = r.String();
   wal.seq = r.U64();
   wal.writer_epoch = r.U64();
@@ -398,8 +451,9 @@ SequentialWal DecodeSequentialWal(const Slice &bytes, const Schema &schema) {
   wal.operation_id = r.String();
   wal.batch_ids = r.Strings();
   const uint32_t count = r.U32();
-  if (count > 1000000)
+  if (count > 1000000) {
     throw std::invalid_argument("sequential: too many WAL chunks");
+  }
   Writer logical;
   logical.U64(wal.schema_version);
   logical.Strings(wal.batch_ids);
@@ -407,16 +461,18 @@ SequentialWal DecodeSequentialWal(const Slice &bytes, const Schema &schema) {
   uint64_t total = 0;
   for (uint32_t i = 0; i < count; ++i) {
     const uint32_t rows = r.U32();
-    if (rows == 0)
+    if (rows == 0) {
       throw std::invalid_argument("sequential: empty WAL chunk");
+    }
     const uint32_t size = r.U32();
     const std::string payload = r.Raw(size);
     Writer entry;
     entry.U32(rows);
     entry.U32(size);
     entry.Raw(payload.data(), payload.size());
-    if (r.U32() != Crc(entry.bytes().data(), entry.bytes().size()))
+    if (r.U32() != Crc(entry.bytes().data(), entry.bytes().size())) {
       throw std::invalid_argument("sequential: bad chunk CRC");
+    }
     logical.Raw(entry.bytes().data(), entry.bytes().size());
     Reader row_reader{Slice(payload)};
     Chunk chunk;
@@ -434,43 +490,54 @@ SequentialWal DecodeSequentialWal(const Slice &bytes, const Schema &schema) {
     wal.chunks.push_back(std::move(chunk));
     total += rows;
   }
-  if (r.U64() != total)
+  if (r.U64() != total) {
     throw std::invalid_argument("sequential: row count mismatch");
+  }
   wal.payload_digest = r.Raw(SHA256_DIGEST_LENGTH);
-  if (wal.payload_digest != Digest(logical.bytes()))
+  if (wal.payload_digest != Digest(logical.bytes())) {
     throw std::invalid_argument("sequential: digest mismatch");
-  if (r.Remaining() != 8)
+  }
+  if (r.Remaining() != 8) {
     throw std::invalid_argument("sequential: bad WAL footer");
+  }
   const uint32_t actual_crc = Crc(bytes.data(), bytes.size() - 8);
-  if (r.U32() != actual_crc)
+  if (r.U32() != actual_crc) {
     throw std::invalid_argument("sequential: bad WAL CRC");
+  }
   r.Magic("DBW2");
   r.End();
   if (wal.table_id.empty() || wal.seq == 0 || wal.writer_epoch == 0 || wal.operation_id.empty() ||
       (wal.kind == SequentialWal::Kind::Append && (wal.batch_ids.empty() || wal.chunks.empty())) ||
-      (wal.kind == SequentialWal::Kind::Fence && (!wal.batch_ids.empty() || !wal.chunks.empty())))
+      (wal.kind == SequentialWal::Kind::Fence && (!wal.batch_ids.empty() || !wal.chunks.empty()))) {
     throw std::invalid_argument("sequential: invalid WAL contents");
+  }
   return wal;
 }
 
 std::optional<SequentialWal> LoadSequentialWal(IStorage &files, const TableDescriptor &table, uint64_t seq) {
   auto in = files.OpenInput(SequentialWalKey(table, seq));
-  if (!in)
+  if (!in) {
     return std::nullopt;
+  }
   const std::string bytes = ReadAll(*in);
   auto wal = DecodeSequentialWal(Slice(bytes), table.schema);
-  if (wal.seq != seq || wal.table_id != table.table_id || wal.schema_version != 1)
+  if (wal.seq != seq || wal.table_id != table.table_id || wal.schema_version != 1) {
     throw std::runtime_error("sequential: WAL identity mismatch");
+  }
   return wal;
 }
 
 SequentialStateStore::SequentialStateStore(const TableDescriptor &table, std::shared_ptr<IMetadataStore> metadata)
     : table_(table), metadata_(std::move(metadata)), current_key_(table.metadata_prefix + "/CURRENT") {
-  if (!metadata_)
+  if (!metadata_) {
     throw std::invalid_argument("sequential: null metadata store");
-  while (!table_.metadata_prefix.empty() && table_.metadata_prefix.back() == '/') table_.metadata_prefix.pop_back();
-  if (table_.metadata_prefix.empty())
+  }
+  while (!table_.metadata_prefix.empty() && table_.metadata_prefix.back() == '/') {
+    table_.metadata_prefix.pop_back();
+  }
+  if (table_.metadata_prefix.empty()) {
     throw std::invalid_argument("sequential: empty metadata prefix");
+  }
   current_key_ = table_.metadata_prefix + "/CURRENT";
 }
 
@@ -488,12 +555,14 @@ std::optional<VersionedSequentialState> SequentialStateStore::Load() const {
 
 SequentialManifest SequentialStateStore::LoadManifest(const SequentialState &state) const {
   auto v = metadata_->Get(table_.metadata_prefix + "/" + state.manifest_key);
-  if (!v)
+  if (!v) {
     throw std::runtime_error("sequential: manifest missing");
+  }
   auto m = DecodeSequentialManifest(Slice(v->value));
   if (m.table_id != table_.table_id || m.covered_through_seq != state.indexed_seq ||
-      m.schema_version != state.schema_version || !SchemasEqual(m.schema, table_.schema))
+      m.schema_version != state.schema_version || !SchemasEqual(m.schema, table_.schema)) {
     throw std::runtime_error("sequential: manifest mismatch");
+  }
   return m;
 }
 
@@ -501,8 +570,9 @@ std::vector<SequentialBatchEntry> SequentialStateStore::LoadBatchIndex(const Seq
   std::vector<SequentialBatchEntry> entries;
   for (const auto &key : manifest.batch_index_files) {
     auto v = metadata_->Get(table_.metadata_prefix + "/" + key);
-    if (!v)
+    if (!v) {
       throw std::runtime_error("sequential: batch index missing");
+    }
     auto part = DecodeSequentialBatchIndex(Slice(v->value));
     entries.insert(entries.end(), std::make_move_iterator(part.begin()), std::make_move_iterator(part.end()));
   }
@@ -515,12 +585,14 @@ ConditionalWriteResult SequentialStateStore::Initialize() {
   manifest.schema = table_.schema;
   const std::string manifest_key = "manifest/initial.meta";
   const auto result = WriteManifest(manifest_key, manifest);
-  if (result == ConditionalWriteResult::RetryableConflict)
+  if (result == ConditionalWriteResult::RetryableConflict) {
     return result;
+  }
   if (result == ConditionalWriteResult::PreconditionFailed) {
     auto existing = metadata_->Get(table_.metadata_prefix + "/" + manifest_key);
-    if (!existing || existing->value != EncodeSequentialManifest(manifest))
+    if (!existing || existing->value != EncodeSequentialManifest(manifest)) {
       throw std::runtime_error("sequential: initial manifest collision");
+    }
   }
   SequentialState state;
   state.table_id = table_.table_id;
@@ -533,13 +605,15 @@ ConditionalWriteResult SequentialStateStore::CompareExchange(const VersionedSequ
                                                              VersionedSequentialState *written) {
   if (next.table_id != table_.table_id || next.state_version != expected.state.state_version + 1 ||
       next.writer_epoch < expected.state.writer_epoch || next.indexed_seq < expected.state.indexed_seq ||
-      next.published_seq < expected.state.published_seq || next.indexed_seq > next.published_seq)
+      next.published_seq < expected.state.published_seq || next.indexed_seq > next.published_seq) {
     throw std::invalid_argument("sequential: invalid CURRENT transition");
+  }
   const auto bytes = EncodeSequentialState(next);
   MetadataVersion version;
   const auto result = metadata_->CompareExchange(current_key_, expected.version, Slice(bytes), &version);
-  if (result == ConditionalWriteResult::Applied && written)
+  if (result == ConditionalWriteResult::Applied && written) {
     *written = {next, version};
+  }
   return result;
 }
 
@@ -548,8 +622,9 @@ ConditionalWriteResult SequentialStateStore::Publish(const VersionedSequentialSt
                                                      VersionedSequentialState *written) {
   if (update.through_seq == 0 || (!update.indexed_manifest_key && update.through_seq <= expected.state.published_seq) ||
       (update.indexed_manifest_key && (update.through_seq <= expected.state.indexed_seq ||
-                                       update.indexed_manifest_key->compare(0, 9, "manifest/") != 0)))
+                                       update.indexed_manifest_key->compare(0, 9, "manifest/") != 0))) {
     throw std::invalid_argument("sequential: invalid publish update");
+  }
 
   SequentialState next = expected.state;
   ++next.state_version;
