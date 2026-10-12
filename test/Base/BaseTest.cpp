@@ -20,7 +20,8 @@ void LaunchParallelThreads(std::vector<std::thread> &threads, size_t num_threads
 
 void WaitThreadFinish(std::vector<std::thread> &threads) {
   for (auto &thread : threads) {
-    if (thread.joinable()) thread.join();
+    if (thread.joinable())
+      thread.join();
   }
 }
 
@@ -49,7 +50,8 @@ TEST(BaseTest, BoundedQueuePushTest) {
     queue.Pop(value);
     values.emplace_back(value);
 
-    if (values.size() == queue_size * thread_count) break;
+    if (values.size() == queue_size * thread_count)
+      break;
   }
 
   WaitThreadFinish(threads);

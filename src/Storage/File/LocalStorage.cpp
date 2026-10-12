@@ -101,15 +101,18 @@ CreateFileResult LocalStorage::CreateIfAbsent(const std::string &path, const Sli
   std::vector<char> name(pattern.begin(), pattern.end());
   name.push_back('\0');
   const int fd = ::mkstemp(name.data());
-  if (fd < 0) throw std::runtime_error("LocalStorage: mkstemp failed for " + full);
+  if (fd < 0)
+    throw std::runtime_error("LocalStorage: mkstemp failed for " + full);
   try {
     size_t written = 0;
     while (written < bytes.size()) {
       const ssize_t n = ::write(fd, bytes.data() + written, bytes.size() - written);
-      if (n <= 0) throw std::runtime_error("LocalStorage: write failed for " + full);
+      if (n <= 0)
+        throw std::runtime_error("LocalStorage: write failed for " + full);
       written += static_cast<size_t>(n);
     }
-    if (::fsync(fd) != 0) throw std::runtime_error("LocalStorage: fsync failed for " + full);
+    if (::fsync(fd) != 0)
+      throw std::runtime_error("LocalStorage: fsync failed for " + full);
     if (::link(name.data(), full.c_str()) == 0) {
       ::close(fd);
       ::unlink(name.data());

@@ -20,8 +20,8 @@
 namespace dbplay::s3 {
 
 struct S3Config {
-  std::string endpoint;    // "http://127.0.0.1:19900" (no trailing slash)
-  std::string region;      // "us-east-1"
+  std::string endpoint;  // "http://127.0.0.1:19900" (no trailing slash)
+  std::string region;    // "us-east-1"
   std::string access_key;
   std::string secret_key;
 };
@@ -34,11 +34,11 @@ enum class PutCondition {
 };
 
 struct S3Response {
-  long status = 0;                // HTTP status code; 0 on transport error
-  bool transport_error = false;   // libcurl failed before an HTTP reply
-  std::string body;               // response payload (GET / List / error XML)
-  std::string etag;               // response ETag with surrounding quotes stripped
-  int64_t content_length = -1;    // Content-Length header, or -1 if absent
+  long status = 0;               // HTTP status code; 0 on transport error
+  bool transport_error = false;  // libcurl failed before an HTTP reply
+  std::string body;              // response payload (GET / List / error XML)
+  std::string etag;              // response ETag with surrounding quotes stripped
+  int64_t content_length = -1;   // Content-Length header, or -1 if absent
 };
 
 class S3Client {

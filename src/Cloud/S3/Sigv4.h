@@ -38,14 +38,14 @@ std::string UriEncode(std::string_view value, bool encode_slash);
 // signer percent-encodes each segment. `query` holds raw (undecoded)
 // key/value pairs; the signer encodes and sorts them.
 struct SigningInput {
-  std::string method;                                       // "GET", "PUT", ...
-  std::string canonical_uri;                                // "/bucket/key"
-  std::vector<std::pair<std::string, std::string>> query;   // raw pairs
-  std::string host;                                         // "127.0.0.1:19900"
-  std::string amz_date;                                     // "20240101T000000Z"
+  std::string method;                                      // "GET", "PUT", ...
+  std::string canonical_uri;                               // "/bucket/key"
+  std::vector<std::pair<std::string, std::string>> query;  // raw pairs
+  std::string host;                                        // "127.0.0.1:19900"
+  std::string amz_date;                                    // "20240101T000000Z"
   std::string payload_sha256_hex;                          // hex sha256 of body
   std::string region;
-  std::string service;                                     // "s3"
+  std::string service;  // "s3"
   std::string access_key;
   std::string secret_key;
 };

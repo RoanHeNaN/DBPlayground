@@ -97,7 +97,8 @@ std::vector<Value> RowCodec::Decode(const Slice &blob) const {
   std::vector<Value> row;
   row.reserve(schema_.size());
   for (const Field &f : schema_) {
-    if (const size_t fw = FixedWidth(f.type); fw != 0) RequireBytes(off, fw, size, "Decode");
+    if (const size_t fw = FixedWidth(f.type); fw != 0)
+      RequireBytes(off, fw, size, "Decode");
     switch (f.type) {
       case Type::Int32:
         row.push_back(Value::Int32(ReadPod<int32_t>(p + off)));
@@ -148,36 +149,42 @@ void RowCodec::DecodeInto(const Slice &blob, const std::vector<int> &projection,
   size_t off = 0;
   for (size_t i = 0; i < schema_.size(); ++i) {
     const int k = out_pos[i];
-    if (const size_t fw = FixedWidth(schema_[i].type); fw != 0) RequireBytes(off, fw, size, "DecodeInto");
+    if (const size_t fw = FixedWidth(schema_[i].type); fw != 0)
+      RequireBytes(off, fw, size, "DecodeInto");
     switch (schema_[i].type) {
       case Type::Int32: {
         int32_t v = ReadPod<int32_t>(p + off);
         off += 4;
-        if (k >= 0) (*cols)[k].Append<int32_t>(v);
+        if (k >= 0)
+          (*cols)[k].Append<int32_t>(v);
         break;
       }
       case Type::Int64: {
         int64_t v = ReadPod<int64_t>(p + off);
         off += 8;
-        if (k >= 0) (*cols)[k].Append<int64_t>(v);
+        if (k >= 0)
+          (*cols)[k].Append<int64_t>(v);
         break;
       }
       case Type::Float: {
         float v = ReadPod<float>(p + off);
         off += 4;
-        if (k >= 0) (*cols)[k].Append<float>(v);
+        if (k >= 0)
+          (*cols)[k].Append<float>(v);
         break;
       }
       case Type::Double: {
         double v = ReadPod<double>(p + off);
         off += 8;
-        if (k >= 0) (*cols)[k].Append<double>(v);
+        if (k >= 0)
+          (*cols)[k].Append<double>(v);
         break;
       }
       case Type::Bool: {
         bool v = ReadPod<uint8_t>(p + off) != 0;
         off += 1;
-        if (k >= 0) (*cols)[k].Append<bool>(v);
+        if (k >= 0)
+          (*cols)[k].Append<bool>(v);
         break;
       }
       case Type::String:
@@ -186,7 +193,8 @@ void RowCodec::DecodeInto(const Slice &blob, const std::vector<int> &projection,
         uint32_t len = ReadPod<uint32_t>(p + off);
         off += 4;
         RequireBytes(off, len, size, "DecodeInto");
-        if (k >= 0) (*cols)[k].AppendBytes(Slice(p + off, len));
+        if (k >= 0)
+          (*cols)[k].AppendBytes(Slice(p + off, len));
         off += len;
         break;
       }

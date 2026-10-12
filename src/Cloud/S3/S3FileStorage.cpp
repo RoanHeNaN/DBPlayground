@@ -17,18 +17,21 @@ class S3InputFile : public IInputFile {
   uint64_t Size() const override { return size_; }
 
   bool ReadAt(uint64_t offset, size_t len, std::string *out) const override {
-    if (offset > size_ || offset + len > size_) return false;
+    if (offset > size_ || offset + len > size_)
+      return false;
     if (len == 0) {
       out->clear();
       return true;
     }
     const s3::S3Response r = client_->GetRange(key_, offset, len);
-    if (r.transport_error) throw std::runtime_error("S3InputFile: transport error reading " + key_);
+    if (r.transport_error)
+      throw std::runtime_error("S3InputFile: transport error reading " + key_);
     if (r.status == 206 || r.status == 200) {
       *out = r.body;
       return true;
     }
-    if (r.status == 416 || r.status == 404) return false;
+    if (r.status == 416 || r.status == 404)
+      return false;
     throw std::runtime_error("S3InputFile: unexpected status " + std::to_string(r.status) + " reading " + key_);
   }
 
@@ -48,14 +51,17 @@ class S3OutputStream : public IOutputStream {
       : client_(std::move(client)), key_(std::move(key)) {}
 
   void Append(const Slice &data) override {
-    if (closed_) throw std::runtime_error("S3OutputStream: append after close on " + key_);
+    if (closed_)
+      throw std::runtime_error("S3OutputStream: append after close on " + key_);
     buffer_.append(data.data(), data.size());
   }
 
   void Close() override {
-    if (closed_) return;
+    if (closed_)
+      return;
     const s3::S3Response r = client_->Put(key_, Slice(buffer_));
-    if (r.transport_error) throw std::runtime_error("S3OutputStream: transport error writing " + key_);
+    if (r.transport_error)
+      throw std::runtime_error("S3OutputStream: transport error writing " + key_);
     if (r.status != 200) {
       throw std::runtime_error("S3OutputStream: PUT " + key_ + " failed with status " + std::to_string(r.status));
     }
@@ -76,9 +82,11 @@ bool ExtractTag(const std::string &xml, const std::string &tag, size_t *pos, std
   const std::string open = "<" + tag + ">";
   const std::string close = "</" + tag + ">";
   const size_t a = xml.find(open, *pos);
-  if (a == std::string::npos) return false;
+  if (a == std::string::npos)
+    return false;
   const size_t b = xml.find(close, a + open.size());
-  if (b == std::string::npos) return false;
+  if (b == std::string::npos)
+    return false;
   *value = xml.substr(a + open.size(), b - (a + open.size()));
   *pos = b + close.size();
   return true;
@@ -95,8 +103,10 @@ S3FileStorage::S3FileStorage(std::shared_ptr<s3::S3Client> client, std::string b
 
 std::unique_ptr<IInputFile> S3FileStorage::OpenInput(const std::string &path) {
   const s3::S3Response r = client_->Head(ObjectKey(path));
-  if (r.transport_error) throw std::runtime_error("S3FileStorage: transport error on HEAD " + path);
-  if (r.status == 404) return nullptr;
+  if (r.transport_error)
+    throw std::runtime_error("S3FileStorage: transport error on HEAD " + path);
+  if (r.status == 404)
+    return nullptr;
   if (r.status != 200) {
     throw std::runtime_error("S3FileStorage: HEAD " + path + " status " + std::to_string(r.status));
   }
@@ -110,15 +120,19 @@ std::unique_ptr<IOutputStream> S3FileStorage::OpenOutput(const std::string &path
 
 CreateFileResult S3FileStorage::CreateIfAbsent(const std::string &path, const Slice &bytes) {
   const s3::S3Response r = client_->Put(ObjectKey(path), bytes, s3::PutCondition::IfNoneMatchStar);
-  if (r.transport_error || r.status == 409 || r.status >= 500) return CreateFileResult::RetryableConflict;
-  if (r.status == 200) return CreateFileResult::Created;
-  if (r.status == 412) return CreateFileResult::AlreadyExists;
+  if (r.transport_error || r.status == 409 || r.status >= 500)
+    return CreateFileResult::RetryableConflict;
+  if (r.status == 200)
+    return CreateFileResult::Created;
+  if (r.status == 412)
+    return CreateFileResult::AlreadyExists;
   throw std::runtime_error("S3FileStorage: conditional PUT " + path + " status " + std::to_string(r.status));
 }
 
 bool S3FileStorage::Exists(const std::string &path) const {
   const s3::S3Response r = client_->Head(ObjectKey(path));
-  if (r.transport_error) throw std::runtime_error("S3FileStorage: transport error on HEAD " + path);
+  if (r.transport_error)
+    throw std::runtime_error("S3FileStorage: transport error on HEAD " + path);
   return r.status == 200;
 }
 
@@ -127,7 +141,8 @@ std::vector<std::string> S3FileStorage::List(const std::string &prefix) const {
   std::string token;
   do {
     const s3::S3Response r = client_->ListV2(bucket_, prefix, token);
-    if (r.transport_error) throw std::runtime_error("S3FileStorage: transport error on LIST " + prefix);
+    if (r.transport_error)
+      throw std::runtime_error("S3FileStorage: transport error on LIST " + prefix);
     if (r.status != 200) {
       throw std::runtime_error("S3FileStorage: LIST " + prefix + " status " + std::to_string(r.status));
     }
@@ -148,7 +163,8 @@ std::vector<std::string> S3FileStorage::List(const std::string &prefix) const {
 
 void S3FileStorage::Delete(const std::string &path) {
   const s3::S3Response r = client_->Delete(ObjectKey(path));
-  if (r.transport_error) throw std::runtime_error("S3FileStorage: transport error on DELETE " + path);
+  if (r.transport_error)
+    throw std::runtime_error("S3FileStorage: transport error on DELETE " + path);
   if (r.status != 204 && r.status != 200 && r.status != 404) {
     throw std::runtime_error("S3FileStorage: DELETE " + path + " status " + std::to_string(r.status));
   }

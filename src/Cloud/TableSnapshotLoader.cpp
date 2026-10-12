@@ -9,13 +9,15 @@ namespace dbplay {
 TableSnapshotLoader::TableSnapshotLoader(TableDescriptor table, std::shared_ptr<IMetadataStore> metadata,
                                          std::shared_ptr<IStorage> files)
     : table_(std::move(table)), files_(std::move(files)), state_store_(table_, std::move(metadata)) {
-  if (!files_) throw std::invalid_argument("TableSnapshotLoader: null file store");
+  if (!files_)
+    throw std::invalid_argument("TableSnapshotLoader: null file store");
 }
 
 std::optional<TableSnapshot> TableSnapshotLoader::Load(size_t probe_limit) const {
   for (int attempt = 0; attempt < 2; ++attempt) {
     const auto current = state_store_.Load();
-    if (!current) return std::nullopt;
+    if (!current)
+      return std::nullopt;
     const auto manifest = state_store_.LoadManifest(current->state);
     TableSnapshot snapshot;
     snapshot.current_metadata_version = current->version;
@@ -40,11 +42,13 @@ std::optional<TableSnapshot> TableSnapshotLoader::Load(size_t probe_limit) const
         for (auto &chunk : wal->chunks) snapshot.wal_chunks.push_back(std::move(chunk));
       }
     }
-    if (missing_required) continue;
+    if (missing_required)
+      continue;
     for (size_t i = 0; i < probe_limit && seq < std::numeric_limits<uint64_t>::max(); ++i) {
       ++seq;
       auto wal = LoadSequentialWal(*files_, table_, seq);
-      if (!wal) break;
+      if (!wal)
+        break;
       ++snapshot.probed_wal_count;
       snapshot.wal_files.push_back(SequentialWalKey(table_, seq));
       if (wal->kind == SequentialWal::Kind::Append) {

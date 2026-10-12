@@ -70,7 +70,8 @@ std::unique_ptr<IOutputStream> MemStorage::OpenOutput(const std::string &path) {
 
 CreateFileResult MemStorage::CreateIfAbsent(const std::string &path, const Slice &bytes) {
   std::lock_guard<std::mutex> lock(mutex_);
-  if (files_.count(path) != 0) return CreateFileResult::AlreadyExists;
+  if (files_.count(path) != 0)
+    return CreateFileResult::AlreadyExists;
   files_.emplace(path, std::string(bytes.data(), bytes.size()));
   return CreateFileResult::Created;
 }

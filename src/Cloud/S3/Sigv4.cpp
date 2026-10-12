@@ -39,8 +39,8 @@ std::string Sha256Hex(std::string_view data) {
 std::string HmacSha256(std::string_view key, std::string_view data) {
   unsigned char out[EVP_MAX_MD_SIZE];
   unsigned int out_len = 0;
-  HMAC(EVP_sha256(), key.data(), static_cast<int>(key.size()),
-       reinterpret_cast<const unsigned char *>(data.data()), data.size(), out, &out_len);
+  HMAC(EVP_sha256(), key.data(), static_cast<int>(key.size()), reinterpret_cast<const unsigned char *>(data.data()),
+       data.size(), out, &out_len);
   return std::string(reinterpret_cast<const char *>(out), out_len);
 }
 
@@ -90,7 +90,8 @@ std::string BuildAuthorization(const SigningInput &in) {
   std::sort(encoded.begin(), encoded.end());
   std::string canonical_query;
   for (size_t i = 0; i < encoded.size(); ++i) {
-    if (i != 0) canonical_query.push_back('&');
+    if (i != 0)
+      canonical_query.push_back('&');
     canonical_query += encoded[i].first;
     canonical_query.push_back('=');
     canonical_query += encoded[i].second;

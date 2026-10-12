@@ -27,7 +27,8 @@ void Poller::Poll(int timeout_ms, ChannelList *active_channels) {
 
 void Poller::FillActiveChannels(int num_events, ChannelList *active_channels) const {
   for (const auto &pfd : pollfds_) {
-    if (num_events <= 0) break;
+    if (num_events <= 0)
+      break;
     if (pfd.revents > 0) {
       --num_events;
       auto it = channels_.find(pfd.fd);
@@ -81,7 +82,8 @@ void Poller::RemoveChannel(Channel *channel) {
     // recorded index. The stored fd may be negated (none-event), so undo that
     // before looking the channel up.
     int fd_at_end = pollfds_.back().fd;
-    if (fd_at_end < 0) fd_at_end = -fd_at_end - 1;
+    if (fd_at_end < 0)
+      fd_at_end = -fd_at_end - 1;
     std::swap(pollfds_[index], pollfds_.back());
     channels_[fd_at_end]->SetIndexInPoller(index);
     pollfds_.pop_back();

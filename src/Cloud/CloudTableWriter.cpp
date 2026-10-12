@@ -18,7 +18,8 @@ CloudTableWriter::CloudTableWriter(TableDescriptor table, std::shared_ptr<IStora
       files_(std::move(files)),
       current_state_store_(table_, std::move(metadata)),
       max_publish_attempts_(max_publish_attempts) {
-  if (!files_ || max_publish_attempts_ == 0) throw std::invalid_argument("CloudTableWriter: invalid dependency");
+  if (!files_ || max_publish_attempts_ == 0)
+    throw std::invalid_argument("CloudTableWriter: invalid dependency");
 }
 
 CloudWriterStartResult CloudTableWriter::Start() {
@@ -28,13 +29,16 @@ CloudWriterStartResult CloudTableWriter::Start() {
   auto state = current_state_store_.Load();
   if (!state) {
     const auto init = current_state_store_.Initialize();
-    if (init == ConditionalWriteResult::RetryableConflict) return {CloudWriterStartCode::RetryableConflict, 0};
+    if (init == ConditionalWriteResult::RetryableConflict)
+      return {CloudWriterStartCode::RetryableConflict, 0};
     state = current_state_store_.Load();
-    if (!state) return {CloudWriterStartCode::RetryableConflict, 0};
+    if (!state)
+      return {CloudWriterStartCode::RetryableConflict, 0};
   }
   bool acquired = false;
   for (size_t attempt = 0; attempt < max_publish_attempts_; ++attempt) {
-    if (state->state.writer_epoch == UINT64_MAX) return {CloudWriterStartCode::InvalidTable, 0};
+    if (state->state.writer_epoch == UINT64_MAX)
+      return {CloudWriterStartCode::InvalidTable, 0};
     auto next = state->state;
     ++next.writer_epoch;
     ++next.state_version;
@@ -45,18 +49,24 @@ CloudWriterStartResult CloudTableWriter::Start() {
       acquired = true;
       break;
     }
-    if (result == ConditionalWriteResult::RetryableConflict) return {CloudWriterStartCode::RetryableConflict, 0};
+    if (result == ConditionalWriteResult::RetryableConflict)
+      return {CloudWriterStartCode::RetryableConflict, 0};
     state = current_state_store_.Load();
-    if (!state) return {CloudWriterStartCode::RetryableConflict, 0};
+    if (!state)
+      return {CloudWriterStartCode::RetryableConflict, 0};
   }
-  if (!acquired) return {CloudWriterStartCode::Contended, 0};
+  if (!acquired)
+    return {CloudWriterStartCode::Contended, 0};
 
   uint64_t seq = state->state.indexed_seq + 1;
   for (;;) {
     const auto latest = current_state_store_.Load();
-    if (!latest) return {CloudWriterStartCode::RetryableConflict, 0};
-    if (latest->state.writer_epoch != state->state.writer_epoch) return {CloudWriterStartCode::Contended, 0};
-    if (seq <= latest->state.indexed_seq) seq = latest->state.indexed_seq + 1;
+    if (!latest)
+      return {CloudWriterStartCode::RetryableConflict, 0};
+    if (latest->state.writer_epoch != state->state.writer_epoch)
+      return {CloudWriterStartCode::Contended, 0};
+    if (seq <= latest->state.indexed_seq)
+      seq = latest->state.indexed_seq + 1;
     auto existing = LoadSequentialWal(*files_, table_, seq);
     if (existing) {
       ++seq;
@@ -91,10 +101,13 @@ CloudWriterStartResult CloudTableWriter::Start() {
 }
 
 CloudImportResult CloudTableWriter::Import(const CloudImportBatch &batch) {
-  if (!current_state_) return Result(CloudImportCode::NotStarted);
-  if (!IsValidBatch(batch)) return Result(CloudImportCode::InvalidRequest);
+  if (!current_state_)
+    return Result(CloudImportCode::NotStarted);
+  if (!IsValidBatch(batch))
+    return Result(CloudImportCode::InvalidRequest);
   auto latest = current_state_store_.Load();
-  if (!latest) return Result(CloudImportCode::RetryableConflict);
+  if (!latest)
+    return Result(CloudImportCode::RetryableConflict);
   if (latest->state.writer_epoch != current_state_->state.writer_epoch) {
     current_state_.reset();
     return Result(CloudImportCode::Fenced);
@@ -118,7 +131,8 @@ CloudImportResult CloudTableWriter::Import(const CloudImportBatch &batch) {
   uint64_t scan_seq = latest->state.indexed_seq + 1;
   while (scan_seq < next_seq_) {
     auto wal = LoadSequentialWal(*files_, table_, scan_seq);
-    if (!wal) return Result(CloudImportCode::RetryableConflict);
+    if (!wal)
+      return Result(CloudImportCode::RetryableConflict);
     for (const auto &id : wal->batch_ids)
       known.emplace(id, SequentialBatchEntry{id, scan_seq, wal->operation_id, wal->payload_digest});
     ++scan_seq;
@@ -172,7 +186,8 @@ CloudImportResult CloudTableWriter::Import(const CloudImportBatch &batch) {
   const auto create = files_->CreateIfAbsent(path, Slice(bytes));
   if (create != CreateFileResult::Created) {
     auto landed = LoadSequentialWal(*files_, table_, wal.seq);
-    if (!landed) return Result(CloudImportCode::RetryableConflict);
+    if (!landed)
+      return Result(CloudImportCode::RetryableConflict);
     if (landed->writer_epoch != wal.writer_epoch) {
       current_state_.reset();
       return Result(CloudImportCode::Fenced);
@@ -195,14 +210,16 @@ CloudImportResult CloudTableWriter::Publish(uint64_t seq, uint64_t epoch) {
   result.wal_seq = seq;
   for (size_t attempt = 0; attempt < max_publish_attempts_; ++attempt) {
     auto latest = current_state_store_.Load();
-    if (!latest) break;
+    if (!latest)
+      break;
     if (latest->state.published_seq >= seq) {
       current_state_ = *latest;
       result = Result(CloudImportCode::Committed);
       result.wal_seq = seq;
       return result;
     }
-    if (latest->state.writer_epoch != epoch) break;
+    if (latest->state.writer_epoch != epoch)
+      break;
     VersionedSequentialState written;
     const auto cas = current_state_store_.Publish(*latest, SequentialPublishUpdate{seq, std::nullopt}, &written);
     if (cas == ConditionalWriteResult::Applied) {
@@ -217,12 +234,15 @@ CloudImportResult CloudTableWriter::Publish(uint64_t seq, uint64_t epoch) {
 }
 
 bool CloudTableWriter::IsValidBatch(const CloudImportBatch &batch) const {
-  if (batch.batch_ids.empty() || batch.chunks.empty()) return false;
+  if (batch.batch_ids.empty() || batch.chunks.empty())
+    return false;
   std::unordered_set<std::string> ids;
   for (const auto &id : batch.batch_ids)
-    if (id.empty() || !ids.insert(id).second) return false;
+    if (id.empty() || !ids.insert(id).second)
+      return false;
   for (const auto &chunk : batch.chunks)
-    if (!IsFullSchemaChunk(chunk, table_.schema)) return false;
+    if (!IsFullSchemaChunk(chunk, table_.schema))
+      return false;
   return true;
 }
 

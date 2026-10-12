@@ -28,7 +28,8 @@ class SpyInputFile : public IInputFile {
   uint64_t Size() const override { return inner_->Size(); }
   bool ReadAt(uint64_t offset, size_t len, std::string *out) const override {
     const bool ok = inner_->ReadAt(offset, len, out);
-    if (ok) *counter_ += out->size();
+    if (ok)
+      *counter_ += out->size();
     return ok;
   }
 
@@ -43,7 +44,8 @@ class SpyStorage : public IStorage {
   explicit SpyStorage(IStorage *inner) : inner_(inner) {}
   std::unique_ptr<IInputFile> OpenInput(const std::string &p) override {
     auto in = inner_->OpenInput(p);
-    if (in == nullptr) return nullptr;
+    if (in == nullptr)
+      return nullptr;
     return std::make_unique<SpyInputFile>(std::move(in), &read_bytes);
   }
   std::unique_ptr<IOutputStream> OpenOutput(const std::string &p) override { return inner_->OpenOutput(p); }

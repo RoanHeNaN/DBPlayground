@@ -258,7 +258,8 @@ TEST_F(S3IntegrationTest, ConcurrentWritersAndStrictReaderOnMinIO) {
           const auto start = writer->Start();
           if (start.code == CloudWriterStartCode::Started) {
             const auto result = writer->Import(batch);
-            if (result.code == CloudImportCode::Committed || result.code == CloudImportCode::AlreadyCommitted) return;
+            if (result.code == CloudImportCode::Committed || result.code == CloudImportCode::AlreadyCommitted)
+              return;
             if (result.code != CloudImportCode::Fenced && result.code != CloudImportCode::RetryableConflict) {
               fail("writer " + std::to_string(i) + " returned unexpected import result " +
                    std::to_string(static_cast<int>(result.code)));

@@ -35,7 +35,8 @@ class SnapshotWalCursor : public IBatchCursor {
       : chunks_(std::move(chunks)), projection_(std::move(projection)) {}
 
   bool Next(Chunk *out) override {
-    if (pos_ == chunks_.size()) return false;
+    if (pos_ == chunks_.size())
+      return false;
     const Chunk &src = chunks_[pos_++];
     out->column_ids = projection_;
     out->columns.clear();
